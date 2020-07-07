@@ -1,0 +1,14 @@
+os:
+    - linux
+
+dist: xenial
+addons:
+    snaps:
+        - name: zig
+          confinement: classic
+          channel: beta
+
+language: c
+
+script:
+    - zig build test
