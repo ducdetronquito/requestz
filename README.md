@@ -1,32 +1,24 @@
 # Requestz
 
-An HTTP/1.1 client inspired by [ureq](https://github.com/algesten/ureq).
+An HTTP client inspired by [httpx](https://github.com/encode/httpx) and [ureq](https://github.com/algesten/ureq).
 
-[![Build Status](https://api.travis-ci.org/ducdetronquito/requestz.svg?branch=master)](https://travis-ci.org/ducdetronquito/requestz) [![License](https://img.shields.io/badge/license-public%20domain-ff69b4.svg)](https://github.com/ducdetronquito/requestz#license) [![Requirements](https://img.shields.io/badge/zig-0.6.0-orange)](https://ziglang.org/)
+[![Build Status](https://api.travis-ci.org/ducdetronquito/requestz.svg?branch=master)](https://travis-ci.org/ducdetronquito/requestz) [![License](https://img.shields.io/badge/license-public%20domain-ff69b4.svg)](https://github.com/ducdetronquito/requestz#license) [![Requirements](https://img.shields.io/badge/zig-0.7.0-orange)](https://ziglang.org/)
 
 ## Usage
 
 ```zig
-const requestz = @import("requestz.zig");
-const std = @import("std");
+const client = @import("requestz.zig").Client;
 
-const response = try requestz.post("http://yumad.bro/)
-    .set("X-My-Header", "Ziguana")
-    .json("{\"What the fox says?\": \"PAPAPAPAPAPAPA\"}")
-    .send();
+var client = try Client.init(std.testing.allocator);
+defer client.deinit();
 
-
-if (response.is_success()) {
-    std.debug.warn("POGHAMP, it's a {} response.", .{response.status()});
-} else {
-    std.debug.warn("Bob, you didn't make a mistake, just a happy little accident.", .{});
-}
+var response = try client.get("http://httpbin.org/get", .{});
+defer response.deinit();
 ```
-
 
 ## Requirements
 
-To work with *requestz* you will need the latest stable version of Zig, which is currently Zig 0.6.0.
+To work with *requestz* you will need the latest stable version of Zig, which is currently Zig 0.7.0.
 
 
 ## License
