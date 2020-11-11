@@ -14,5 +14,6 @@ pub const Response = struct {
     pub fn deinit(self: *Response) void {
         self.headers.deinit();
         self.allocator.free(self.buffer);
+        self.allocator.free(self.body);
     }
 };

@@ -47,12 +47,7 @@ test "Get" {
     expect(response.status == .Ok);
     expect(response.version == .Http11);
     var headers = response.headers.items();
-    // TODO:
-    // We get random segfault when accessing the headers data.
-    // This is caused when the http message comes in two parts.
-    // The first part allows to parse the headers into the response event.
-    // Then the second part contains the body, and when adding this part to the buffer
-    // it invalidates the slice of the headers.
+
     expect(std.mem.eql(u8, headers[0].name.raw(), "Date"));
     expect(std.mem.eql(u8, headers[1].name.raw(), "Content-Type"));
     expect(std.mem.eql(u8, headers[1].value, "application/json"));
@@ -66,4 +61,6 @@ test "Get" {
     expect(std.mem.eql(u8, headers[5].value, "*"));
     expect(std.mem.eql(u8, headers[6].name.raw(), "Access-Control-Allow-Credentials"));
     expect(std.mem.eql(u8, headers[6].value, "true"));
+
+    expect(response.body.len == 196);
 }

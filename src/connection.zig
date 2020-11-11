@@ -65,7 +65,7 @@ pub const Connection = struct {
 
         return Response {
             .allocator = self.allocator,
-            .buffer = self.state.toOwnedSlice(),
+            .buffer = response.raw_bytes,
             .status = response.statusCode,
             .version = response.version,
             .headers = response.headers,
