@@ -78,10 +78,7 @@ test "Post binary data" {
 
     expect(response.status == .Ok);
 
-    var parser = std.json.Parser.init(std.testing.allocator, false);
-    defer parser.deinit();
-
-    var tree = try parser.parse(response.body);
+    var tree = try response.json();
     defer tree.deinit();
 
     var data = tree.root.Object.get("data").?.String;
