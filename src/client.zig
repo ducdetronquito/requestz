@@ -26,6 +26,10 @@ pub const Client = struct {
         return self.request(.Get, url, options);
     }
 
+    pub fn post(self: Client, url: []const u8, options: anytype) !Response {
+        return self.request(.Post, url, options);
+    }
+
     pub fn request(self: Client, method: Method, url: []const u8, options: anytype) !Response {
         var connection = self.get_connection();
         defer connection.deinit();
@@ -63,4 +67,23 @@ test "Get" {
     expect(std.mem.eql(u8, headers[6].value, "true"));
 
     expect(response.body.len == 196);
+}
+
+test "Post binary data" {
+    var client = try Client.init(std.testing.allocator);
+    defer client.deinit();
+
+    var response = try client.post("http://httpbin.org/post", .{ .content = "Gotta go fast!"});
+    defer response.deinit();
+
+    expect(response.status == .Ok);
+
+    var parser = std.json.Parser.init(std.testing.allocator, false);
+    defer parser.deinit();
+
+    var tree = try parser.parse(response.body);
+    defer tree.deinit();
+
+    var data = tree.root.Object.get("data").?.String;
+    expect(std.mem.eql(u8, data, "Gotta go fast!"));
 }

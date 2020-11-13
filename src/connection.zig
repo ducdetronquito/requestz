@@ -33,35 +33,37 @@ pub const Connection = struct {
     pub fn request(self: *Connection, method: Method, url: []const u8, options: anytype) !Response {
         const uri = try Uri.parse(url, false);
 
-        var user_headers: []Header = &[_]Header{};
-        if (@hasField(@TypeOf(options), "headers")) {
-            user_headers = options.headers;
-        }
-
-        var headers = Headers.init(self.allocator);
-        try headers.append("Host", uri.host.name);
-        try headers._items.appendSlice(user_headers);
-
         var version = Version.Http11;
         if (@hasField(@TypeOf(options), "version")) {
             version = options.version;
         }
 
+        var headers = Headers.init(self.allocator);
+        try headers.append("Host", uri.host.name);
+        if (@hasField(@TypeOf(options), "headers")) {
+            try headers._items.appendSlice(options.headers);
+        }
+
+        var content: ?[]const u8 = null;
+        if (@hasField(@TypeOf(options), "content")) {
+            content = options.content;
+        }
+
+        var _request = try h11.Request.init(method, uri.path, version, headers);
+        defer _request.deinit();
+
+        var content_length = try self.frameRequestBody(&_request, content);
+
         self.socket = try network.connectToHost(self.allocator, uri.host.name, 80, .tcp);
+        try self.sendRequest(_request);
+        try self.sendRequestData(content);
 
-        // TODO:
-        // - Evaluate if we should init a request event with a Header slice instead.
-        // - Add a method h11.Event.request(...) to return a request event directly.
-        var request_event = try h11.Request.init(method, uri.path, version, headers);
-        defer request_event.deinit();
-
-        var bytes = try self.state.send(h11.Event {.Request = request_event });
-        defer self.allocator.free(bytes);
-
-        try self.socket.?.writer().writeAll(bytes);
         var response = try self.readResponse();
-
         var data = try self.readResponseData();
+
+        if (content_length != null) {
+            self.allocator.free(content_length.?);
+        }
 
         return Response {
             .allocator = self.allocator,
@@ -71,6 +73,31 @@ pub const Connection = struct {
             .headers = response.headers,
             .body = data.content,
         };
+    }
+
+    fn frameRequestBody(self: *Connection, _request: *h11.Request, content: ?[]const u8) !?[]const u8 {
+        if (content == null) {
+            return null;
+        }
+
+        var content_length = try std.fmt.allocPrint(self.allocator, "{d}", .{content.?.len});
+        try _request.headers.append("Content-Length", content_length);
+        return content_length;
+    }
+
+    fn sendRequest(self: *Connection, _request: h11.Request) !void {
+        var bytes = try self.state.send(h11.Event {.Request = _request });
+        defer self.allocator.free(bytes);
+        try self.socket.?.writer().writeAll(bytes);
+    }
+
+    fn sendRequestData(self: *Connection, content: ?[]const u8) !void {
+        if (content == null or content.?.len == 0) {
+            return;
+        }
+        var data_event = h11.Data.to_event(null, content.?);
+        var bytes = try self.state.send(data_event);
+        try self.socket.?.writer().writeAll(bytes);
     }
 
     fn readResponse(self: *Connection) !h11.Response {
