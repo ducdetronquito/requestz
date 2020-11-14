@@ -31,8 +31,6 @@ defer response.deinit();
 
 Send a request with compile-time headers
 ```zig
-const Headers = @import("http").Headers;
-
 var headers = .{
     .{"Gotta-go", "Fast!"}
 };
