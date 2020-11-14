@@ -40,6 +40,7 @@ pub const Client = struct {
 
 
 const expect = std.testing.expect;
+const Headers = @import("http").Headers;
 
 test "Get" {
     var client = try Client.init(std.testing.allocator);
@@ -67,6 +68,46 @@ test "Get" {
     expect(std.mem.eql(u8, headers[6].value, "true"));
 
     expect(response.body.len == 196);
+}
+
+test "Get with headers" {
+    var client = try Client.init(std.testing.allocator);
+    defer client.deinit();
+
+    var headers = Headers.init(std.testing.allocator);
+    defer headers.deinit();
+    try headers.append("Gotta-go", "Fast!");
+
+    var response = try client.get("http://httpbin.org/headers", .{ .headers = headers.items()});
+    defer response.deinit();
+
+    expect(response.status == .Ok);
+
+    var tree = try response.json();
+    defer tree.deinit();
+
+    var value = tree.root.Object.get("headers").?.Object.get("Gotta-Go").?.String;
+    expect(std.mem.eql(u8, value, "Fast!"));
+}
+
+test "Get with compile-time headers" {
+    var client = try Client.init(std.testing.allocator);
+    defer client.deinit();
+
+    var headers = .{
+        .{"Gotta-go", "Fast!"}
+    };
+
+    var response = try client.get("http://httpbin.org/headers", .{ .headers = headers});
+    defer response.deinit();
+
+    expect(response.status == .Ok);
+
+    var tree = try response.json();
+    defer tree.deinit();
+
+    var value = tree.root.Object.get("headers").?.Object.get("Gotta-Go").?.String;
+    expect(std.mem.eql(u8, value, "Fast!"));
 }
 
 test "Post binary data" {
