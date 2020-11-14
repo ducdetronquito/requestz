@@ -2,6 +2,9 @@ const Allocator = std.mem.Allocator;
 const h11 = @import("h11");
 const Header = @import("http").Header;
 const Headers = @import("http").Headers;
+const HeaderName = @import("http").HeaderName;
+const HeaderType = @import("http").HeaderType;
+const HeaderValue = @import("http").HeaderValue;
 const Method = @import("http").Method;
 const network = @import("network");
 const Response = @import("response.zig").Response;
@@ -41,7 +44,8 @@ pub const Connection = struct {
         var headers = Headers.init(self.allocator);
         try headers.append("Host", uri.host.name);
         if (@hasField(@TypeOf(options), "headers")) {
-            try headers._items.appendSlice(options.headers);
+            var user_headers = self.getUserHeaders(options.headers);
+            try headers._items.appendSlice(user_headers);
         }
 
         var content: ?[]const u8 = null;
@@ -73,6 +77,51 @@ pub const Connection = struct {
             .headers = response.headers,
             .body = data.content,
         };
+    }
+
+    // TODO:
+    // This function provides compile-time evaluation of headers.
+    // It should probably be located within the http package.
+    fn getUserHeaders(self: Connection, user_headers: anytype) []Header {
+        const typeof = @TypeOf(user_headers);
+        const typeinfo = @typeInfo(typeof);
+
+        switch(typeinfo) {
+            .Struct => |obj| {
+                comptime {
+                    var i = 0;
+                    while (i < obj.fields.len) {
+                        _ = HeaderName.parse(user_headers[i][0]) catch |err| {
+                            @compileError("Invalid header name: " ++ user_headers[i][0]);
+                        };
+
+                        _ = HeaderValue.parse(user_headers[i][1]) catch |err| {
+                            @compileError("Invalid header value: " ++ user_headers[i][1]);
+                        };
+                        i += 1;
+                    }
+                }
+
+                comptime {
+                    var result: [obj.fields.len]Header = undefined;
+                    var i: usize = 0;
+                    while (i < obj.fields.len) {
+                        var _type = HeaderType.from_bytes(user_headers[i][0]);
+                        var name = user_headers[i][0];
+                        var value = user_headers[i][1];
+                        result[i] = Header { .name = .{.type = _type, .value = name}, .value = value};
+                        i += 1;
+                    }
+                    return &result;
+                }
+            },
+            .Pointer => |ptr| {
+                return user_headers;
+            },
+            else => {
+                @compileError("Invalid headers type: You must provide either a http.Headers or an anonymous struct literal.");
+            }
+        }
     }
 
     fn frameRequestBody(self: *Connection, _request: *h11.Request, content: ?[]const u8) !?[]const u8 {

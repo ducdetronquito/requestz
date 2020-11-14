@@ -17,6 +17,30 @@ var response = try client.get("http://httpbin.org/get", .{});
 defer response.deinit();
 ```
 
+Send a request with headers
+```zig
+const Headers = @import("http").Headers;
+
+var headers = Headers.init(std.testing.allocator);
+defer headers.deinit();
+try headers.append("Gotta-go", "Fast!");
+
+var response = try client.get("http://httpbin.org/get", .{ .headers = headers.items() });
+defer response.deinit();
+```
+
+Send a request with compile-time headers
+```zig
+const Headers = @import("http").Headers;
+
+var headers = .{
+    .{"Gotta-go", "Fast!"}
+};
+
+var response = try client.get("http://httpbin.org/get", .{ .headers = headers });
+defer response.deinit();
+```
+
 Send binary data along with a POST request
 ```zig
 var response = try client.post("http://httpbin.org/post", .{ .content = "Gotta go fast!" });
