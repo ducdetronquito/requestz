@@ -18,23 +18,51 @@ pub const Client = struct {
         network.deinit();
     }
 
-    fn get_connection(self: Client) Connection {
-        return Connection.init(self.allocator);
+    pub fn connect(self: Client, url: []const u8, args: anytype) !Response {
+        return self.request(.Connect, url, args);
     }
 
-    pub fn get(self: Client, url: []const u8, options: anytype) !Response {
-        return self.request(.Get, url, options);
+    pub fn delete(self: Client, url: []const u8, args: anytype) !Response {
+        return self.request(.Delete, url, args);
     }
 
-    pub fn post(self: Client, url: []const u8, options: anytype) !Response {
-        return self.request(.Post, url, options);
+    pub fn get(self: Client, url: []const u8, args: anytype) !Response {
+        return self.request(.Get, url, args);
     }
 
-    pub fn request(self: Client, method: Method, url: []const u8, options: anytype) !Response {
+    pub fn head(self: Client, url: []const u8, args: anytype) !Response {
+        return self.request(.Head, url, args);
+    }
+
+    pub fn options(self: Client, url: []const u8, args: anytype) !Response {
+        return self.request(.Options, url, args);
+    }
+
+    pub fn patch(self: Client, url: []const u8, args: anytype) !Response {
+        return self.request(.Patch, url, args);
+    }
+
+    pub fn post(self: Client, url: []const u8, args: anytype) !Response {
+        return self.request(.Post, url, args);
+    }
+
+    pub fn put(self: Client, url: []const u8, args: anytype) !Response {
+        return self.request(.Put, url, args);
+    }
+
+    pub fn request(self: Client, method: Method, url: []const u8, args: anytype) !Response {
         var connection = self.get_connection();
         defer connection.deinit();
 
-        return connection.request(method, url, options);
+        return connection.request(method, url, args);
+    }
+
+    pub fn trace(self: Client, url: []const u8, args: anytype) !Response {
+        return self.request(.Trace, url, args);
+    }
+
+    fn get_connection(self: Client) Connection {
+        return Connection.init(self.allocator);
     }
 };
 
