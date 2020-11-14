@@ -50,6 +50,15 @@ var tree = try response.json();
 defer tree.deinit();
 ```
 
+Other standard HTTP method shortcuts:
+- `client.connect`
+- `client.delete`
+- `client.head`
+- `client.options`
+- `client.patch`
+- `client.put`
+- `client.trace`
+
 ## Requirements
 
 To work with *requestz* you will need the latest stable version of Zig, which is currently Zig 0.7.0.
