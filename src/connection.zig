@@ -6,7 +6,7 @@ const HeaderName = @import("http").HeaderName;
 const HeaderType = @import("http").HeaderType;
 const HeaderValue = @import("http").HeaderValue;
 const Method = @import("http").Method;
-const network = @import("network");
+const Socket = @import("socket.zig").Socket;
 const Response = @import("response.zig").Response;
 const std = @import("std");
 const Uri = @import("http").Uri;
@@ -15,7 +15,7 @@ const Version = @import("http").Version;
 pub const Connection = struct {
     allocator: *Allocator,
     state: h11.Client,
-    socket: ?network.Socket,
+    socket: ?Socket,
 
     pub fn init(allocator: *Allocator) Connection {
         return Connection {
@@ -58,7 +58,7 @@ pub const Connection = struct {
 
         var content_length = try self.frameRequestBody(&_request, content);
 
-        self.socket = try network.connectToHost(self.allocator, uri.host.name, 80, .tcp);
+        self.socket = try Socket.connect(self.allocator, uri.host.name, 80);
         try self.sendRequest(_request);
         try self.sendRequestData(content);
 
@@ -137,7 +137,7 @@ pub const Connection = struct {
     fn sendRequest(self: *Connection, _request: h11.Request) !void {
         var bytes = try self.state.send(h11.Event {.Request = _request });
         defer self.allocator.free(bytes);
-        try self.socket.?.writer().writeAll(bytes);
+        try self.socket.?.write(bytes);
     }
 
     fn sendRequestData(self: *Connection, content: ?[]const u8) !void {
@@ -146,7 +146,7 @@ pub const Connection = struct {
         }
         var data_event = h11.Data.to_event(null, content.?);
         var bytes = try self.state.send(data_event);
-        try self.socket.?.writer().writeAll(bytes);
+        try self.socket.?.write(bytes);
     }
 
     fn readResponse(self: *Connection) !h11.Response {
