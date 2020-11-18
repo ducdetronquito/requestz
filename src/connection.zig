@@ -15,27 +15,30 @@ const Version = @import("http").Version;
 pub const Connection = struct {
     allocator: *Allocator,
     state: h11.Client,
-    socket: ?Socket,
+    socket: Socket,
+    uri: Uri,
 
-    pub fn init(allocator: *Allocator) Connection {
+    pub fn init(allocator: *Allocator, socket: Socket, uri: Uri) Connection {
         return Connection {
             .allocator = allocator,
+            .socket = socket,
             .state = h11.Client.init(allocator),
-            .socket = null,
+            .uri = uri
         };
+    }
+
+    pub fn connect(allocator: *Allocator, uri: Uri) !Connection {
+        const port = uri.port orelse 80;
+        var socket = try Socket.connect(allocator, uri.host.name, port);
+        return Connection.init(allocator, socket, uri);
     }
 
     pub fn deinit(self: *Connection) void {
         self.state.deinit();
-
-        if (self.socket != null) {
-            self.socket.?.close();
-        }
+        self.socket.close();
     }
 
-    pub fn request(self: *Connection, method: Method, url: []const u8, options: anytype) !Response {
-        const uri = try Uri.parse(url, false);
-
+    pub fn request(self: *Connection, method: Method, uri: Uri, options: anytype) !Response {
         var version = Version.Http11;
         if (@hasField(@TypeOf(options), "version")) {
             version = options.version;
@@ -137,7 +140,7 @@ pub const Connection = struct {
     fn sendRequest(self: *Connection, _request: h11.Request) !void {
         var bytes = try self.state.send(h11.Event {.Request = _request });
         defer self.allocator.free(bytes);
-        try self.socket.?.write(bytes);
+        try self.socket.write(bytes);
     }
 
     fn sendRequestData(self: *Connection, content: ?[]const u8) !void {
@@ -146,7 +149,7 @@ pub const Connection = struct {
         }
         var data_event = h11.Data.to_event(null, content.?);
         var bytes = try self.state.send(data_event);
-        try self.socket.?.write(bytes);
+        try self.socket.write(bytes);
     }
 
     fn readResponse(self: *Connection) !h11.Response {
@@ -174,7 +177,7 @@ pub const Connection = struct {
             var event = self.state.nextEvent() catch |err| switch (err) {
                 error.NeedData => {
                     var buffer: [1024]u8 = undefined;
-                    const bytesReceived = try self.socket.?.receive(&buffer);
+                    const bytesReceived = try self.socket.receive(&buffer);
                     var content = buffer[0..bytesReceived];
                     try self.state.receive(content);
                     continue;

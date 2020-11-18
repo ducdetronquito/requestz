@@ -4,6 +4,7 @@ const Method = @import("http").Method;
 const network = @import("network");
 const Response = @import("response.zig").Response;
 const std = @import("std");
+const Uri = @import("http").Uri;
 
 
 pub const Client = struct {
@@ -51,18 +52,20 @@ pub const Client = struct {
     }
 
     pub fn request(self: Client, method: Method, url: []const u8, args: anytype) !Response {
-        var connection = self.get_connection();
+        const uri = try Uri.parse(url, false);
+
+        var connection = try self.get_connection(uri);
         defer connection.deinit();
 
-        return connection.request(method, url, args);
+        return connection.request(method, uri, args);
     }
 
     pub fn trace(self: Client, url: []const u8, args: anytype) !Response {
         return self.request(.Trace, url, args);
     }
 
-    fn get_connection(self: Client) Connection {
-        return Connection.init(self.allocator);
+    fn get_connection(self: Client, uri: Uri) !Connection {
+        return try Connection.connect(self.allocator, uri);
     }
 };
 
