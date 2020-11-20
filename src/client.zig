@@ -1,5 +1,5 @@
 const Allocator = std.mem.Allocator;
-const Connection = @import("connection.zig").Connection;
+const TcpConnection = @import("connection.zig").TcpConnection;
 const Method = @import("http").Method;
 const network = @import("network");
 const Response = @import("response.zig").Response;
@@ -64,8 +64,8 @@ pub const Client = struct {
         return self.request(.Trace, url, args);
     }
 
-    fn get_connection(self: Client, uri: Uri) !Connection {
-        return try Connection.connect(self.allocator, uri);
+    fn get_connection(self: Client, uri: Uri) !TcpConnection {
+        return try TcpConnection.connect(self.allocator, uri);
     }
 };
 
