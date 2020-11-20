@@ -1,9 +1,10 @@
 const Allocator = std.mem.Allocator;
-const Connection = @import("connection.zig").Connection;
+const TcpConnection = @import("connection.zig").TcpConnection;
 const Method = @import("http").Method;
 const network = @import("network");
 const Response = @import("response.zig").Response;
 const std = @import("std");
+const Uri = @import("http").Uri;
 
 
 pub const Client = struct {
@@ -51,105 +52,19 @@ pub const Client = struct {
     }
 
     pub fn request(self: Client, method: Method, url: []const u8, args: anytype) !Response {
-        var connection = self.get_connection();
+        const uri = try Uri.parse(url, false);
+
+        var connection = try self.get_connection(uri);
         defer connection.deinit();
 
-        return connection.request(method, url, args);
+        return connection.request(method, uri, args);
     }
 
     pub fn trace(self: Client, url: []const u8, args: anytype) !Response {
         return self.request(.Trace, url, args);
     }
 
-    fn get_connection(self: Client) Connection {
-        return Connection.init(self.allocator);
+    fn get_connection(self: Client, uri: Uri) !TcpConnection {
+        return try TcpConnection.connect(self.allocator, uri);
     }
 };
-
-
-const expect = std.testing.expect;
-const Headers = @import("http").Headers;
-
-test "Get" {
-    var client = try Client.init(std.testing.allocator);
-    defer client.deinit();
-
-    var response = try client.get("http://httpbin.org/get", .{});
-    defer response.deinit();
-
-    expect(response.status == .Ok);
-    expect(response.version == .Http11);
-    var headers = response.headers.items();
-
-    expect(std.mem.eql(u8, headers[0].name.raw(), "Date"));
-    expect(std.mem.eql(u8, headers[1].name.raw(), "Content-Type"));
-    expect(std.mem.eql(u8, headers[1].value, "application/json"));
-    expect(std.mem.eql(u8, headers[2].name.raw(), "Content-Length"));
-    expect(std.mem.eql(u8, headers[2].value, "196"));
-    expect(std.mem.eql(u8, headers[3].name.raw(), "Connection"));
-    expect(std.mem.eql(u8, headers[3].value, "keep-alive"));
-    expect(std.mem.eql(u8, headers[4].name.raw(), "Server"));
-    expect(std.mem.eql(u8, headers[4].value, "gunicorn/19.9.0"));
-    expect(std.mem.eql(u8, headers[5].name.raw(), "Access-Control-Allow-Origin"));
-    expect(std.mem.eql(u8, headers[5].value, "*"));
-    expect(std.mem.eql(u8, headers[6].name.raw(), "Access-Control-Allow-Credentials"));
-    expect(std.mem.eql(u8, headers[6].value, "true"));
-
-    expect(response.body.len == 196);
-}
-
-test "Get with headers" {
-    var client = try Client.init(std.testing.allocator);
-    defer client.deinit();
-
-    var headers = Headers.init(std.testing.allocator);
-    defer headers.deinit();
-    try headers.append("Gotta-go", "Fast!");
-
-    var response = try client.get("http://httpbin.org/headers", .{ .headers = headers.items()});
-    defer response.deinit();
-
-    expect(response.status == .Ok);
-
-    var tree = try response.json();
-    defer tree.deinit();
-
-    var value = tree.root.Object.get("headers").?.Object.get("Gotta-Go").?.String;
-    expect(std.mem.eql(u8, value, "Fast!"));
-}
-
-test "Get with compile-time headers" {
-    var client = try Client.init(std.testing.allocator);
-    defer client.deinit();
-
-    var headers = .{
-        .{"Gotta-go", "Fast!"}
-    };
-
-    var response = try client.get("http://httpbin.org/headers", .{ .headers = headers});
-    defer response.deinit();
-
-    expect(response.status == .Ok);
-
-    var tree = try response.json();
-    defer tree.deinit();
-
-    var value = tree.root.Object.get("headers").?.Object.get("Gotta-Go").?.String;
-    expect(std.mem.eql(u8, value, "Fast!"));
-}
-
-test "Post binary data" {
-    var client = try Client.init(std.testing.allocator);
-    defer client.deinit();
-
-    var response = try client.post("http://httpbin.org/post", .{ .content = "Gotta go fast!"});
-    defer response.deinit();
-
-    expect(response.status == .Ok);
-
-    var tree = try response.json();
-    defer tree.deinit();
-
-    var data = tree.root.Object.get("data").?.String;
-    expect(std.mem.eql(u8, data, "Gotta go fast!"));
-}
