@@ -12,6 +12,10 @@ const std = @import("std");
 const Uri = @import("http").Uri;
 const Version = @import("http").Version;
 
+
+pub const TcpConnection = Connection(Socket);
+
+
 pub fn Connection(comptime SocketType: type) type {
     return struct {
         const Self = @This();
@@ -192,4 +196,87 @@ pub fn Connection(comptime SocketType: type) type {
     };
 }
 
-pub const TcpConnection = Connection(Socket);
+
+const expect = std.testing.expect;
+const SocketMock = @import("socket.zig").SocketMock;
+const ConnectionMock = Connection(SocketMock);
+
+test "Get" {
+    const uri = try Uri.parse("http://httpbin.org/get", false);
+    var connection = try ConnectionMock.connect(std.testing.allocator, uri);
+    defer connection.deinit();
+
+    try connection.socket.have_received(
+        "HTTP/1.1 200 OK\r\nContent-Length: 14\r\nServer: gunicorn/19.9.0\r\n\r\n"
+        ++ "Gotta Go Fast!"
+    );
+
+    var response = try connection.request(.Get, uri, .{});
+    defer response.deinit();
+
+    expect(response.status == .Ok);
+    expect(response.version == .Http11);
+
+    var headers = response.headers.items();
+
+    expect(std.mem.eql(u8, headers[0].name.raw(), "Content-Length"));
+    expect(std.mem.eql(u8, headers[1].name.raw(), "Server"));
+
+    expect(response.body.len == 14);
+}
+
+test "Get with headers" {
+    const uri = try Uri.parse("http://httpbin.org/get", false);
+
+    var connection = try ConnectionMock.connect(std.testing.allocator, uri);
+    defer connection.deinit();
+    try connection.socket.have_received(
+        "HTTP/1.1 200 OK\r\nContent-Length: 14\r\nServer: gunicorn/19.9.0\r\n\r\n"
+        ++ "Gotta Go Fast!"
+    );
+
+    var headers = Headers.init(std.testing.allocator);
+    defer headers.deinit();
+    try headers.append("Gotta-go", "Fast!");
+
+    var response = try connection.request(.Get, uri, .{ .headers = headers.items()});
+    defer response.deinit();
+
+    expect(connection.socket.have_sent("GET /get HTTP/1.1\r\nHost: httpbin.org\r\nGotta-go: Fast!\r\n\r\n"));
+}
+
+test "Get with compile-time headers" {
+    const uri = try Uri.parse("http://httpbin.org/get", false);
+
+    var connection = try ConnectionMock.connect(std.testing.allocator, uri);
+    defer connection.deinit();
+    try connection.socket.have_received(
+        "HTTP/1.1 200 OK\r\nContent-Length: 14\r\nServer: gunicorn/19.9.0\r\n\r\n"
+        ++ "Gotta Go Fast!"
+    );
+
+    var headers = .{
+        .{"Gotta-go", "Fast!"}
+    };
+
+    var response = try connection.request(.Get, uri, .{ .headers = headers});
+    defer response.deinit();
+
+    expect(connection.socket.have_sent("GET /get HTTP/1.1\r\nHost: httpbin.org\r\nGotta-go: Fast!\r\n\r\n"));
+}
+
+test "Post binary data" {
+    const uri = try Uri.parse("http://httpbin.org/post", false);
+
+    var connection = try ConnectionMock.connect(std.testing.allocator, uri);
+    defer connection.deinit();
+    try connection.socket.have_received(
+        "HTTP/1.1 200 OK\r\nContent-Length: 14\r\nServer: gunicorn/19.9.0\r\n\r\n"
+        ++ "Gotta Go Fast!"
+    );
+
+    var response = try connection.request(.Post, uri, .{ .content = "Gotta go fast!"});
+    defer response.deinit();
+
+    expect(connection.socket.have_sent("POST /post HTTP/1.1\r\nHost: httpbin.org\r\nContent-Length: 14\r\n\r\nGotta go fast!"));
+}
