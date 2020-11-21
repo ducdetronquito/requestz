@@ -69,7 +69,7 @@ pub fn Connection(comptime SocketType: type) type {
             try self.sendRequestData(content);
 
             var response = try self.readResponse();
-            var data = try self.readResponseData();
+            var body = try self.readResponseBody();
 
             if (content_length != null) {
                 self.allocator.free(content_length.?);
@@ -81,7 +81,7 @@ pub fn Connection(comptime SocketType: type) type {
                 .status = response.statusCode,
                 .version = response.version,
                 .headers = response.headers,
-                .body = data.content,
+                .body = body,
             };
         }
 
@@ -166,14 +166,13 @@ pub fn Connection(comptime SocketType: type) type {
             }
         }
 
-        fn readResponseData(self: *Self) !h11.Data {
+        fn readResponseBody(self: *Self) ![]const u8 {
             var event = try self.nextEvent();
-            switch (event) {
-                .Data => |data| {
-                    return data;
-                },
+            return switch (event) {
+                .Data => |data| data.content,
+                .EndOfMessage => "",
                 else => unreachable,
-            }
+            };
         }
 
         fn nextEvent(self: *Self) !h11.Event {
@@ -279,4 +278,18 @@ test "Post binary data" {
     defer response.deinit();
 
     expect(connection.socket.have_sent("POST /post HTTP/1.1\r\nHost: httpbin.org\r\nContent-Length: 14\r\n\r\nGotta go fast!"));
+}
+
+
+test "Head request has no message body" {
+    const uri = try Uri.parse("http://httpbin.org/head", false);
+    var connection = try ConnectionMock.connect(std.testing.allocator, uri);
+    defer connection.deinit();
+
+    try connection.socket.have_received("HTTP/1.1 200 OK\r\nContent-Length: 14\r\nServer: gunicorn/19.9.0\r\n\r\n");
+
+    var response = try connection.request(.Head, uri, .{});
+    defer response.deinit();
+
+    expect(response.body.len == 0);
 }
