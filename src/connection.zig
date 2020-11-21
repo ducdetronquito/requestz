@@ -71,7 +71,9 @@ pub fn Connection(comptime SocketType: type) type {
                 content = options.content;
             }
 
-            var _request = try h11.Request.init(method, uri.path, version, headers);
+            var path = if (uri.path.len != 0) uri.path else "/";
+
+            var _request = try h11.Request.init(method, path, version, headers);
             defer _request.deinit();
 
             var content_length = try self.frameRequestBody(&_request, content);
@@ -316,4 +318,19 @@ test "Requesting an IP address and a port should be in HOST headers" {
     defer response.deinit();
 
     expect(connection.socket.have_sent("GET / HTTP/1.1\r\nHost: 127.0.0.1:8080\r\n\r\n"));
+}
+
+
+test "Request a URI without path defaults to /" {
+    const uri = try Uri.parse("http://httpbin.org", false);
+
+    var connection = try ConnectionMock.connect(std.testing.allocator, uri);
+    defer connection.deinit();
+
+    try connection.socket.have_received("HTTP/1.1 200 OK\r\n\r\n");
+
+    var response = try connection.request(.Get, uri, .{});
+    defer response.deinit();
+
+    expect(connection.socket.have_sent("GET / HTTP/1.1\r\nHost: httpbin.org\r\n\r\n"));
 }
