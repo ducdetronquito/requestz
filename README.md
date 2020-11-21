@@ -2,7 +2,7 @@
 
 An HTTP client inspired by [httpx](https://github.com/encode/httpx) and [ureq](https://github.com/algesten/ureq).
 
-[![Build Status](https://api.travis-ci.org/ducdetronquito/requestz.svg?branch=master)](https://travis-ci.org/ducdetronquito/requestz) [![License](https://img.shields.io/badge/license-public%20domain-ff69b4.svg)](https://github.com/ducdetronquito/requestz#license) [![Requirements](https://img.shields.io/badge/zig-0.7.0-orange)](https://ziglang.org/)
+[![Build Status](https://api.travis-ci.org/ducdetronquito/requestz.svg?branch=master)](https://travis-ci.org/ducdetronquito/requestz) [![License](https://img.shields.io/badge/License-BSD%200--Clause-ff69b4.svg)](https://github.com/ducdetronquito/requestz#license) [![Requirements](https://img.shields.io/badge/zig-0.7.0-orange)](https://ziglang.org/)
 
 ## Usage
 
@@ -64,4 +64,4 @@ To work with *requestz* you will need the latest stable version of Zig, which is
 
 ## License
 
-*requestz* is released into the Public Domain. 🎉🍻
+*requestz* is released under the [BSD Zero clause license](https://choosealicense.com/licenses/0bsd/). 🎉🍻
