@@ -33,8 +33,7 @@ pub fn Connection(comptime SocketType: type) type {
         }
 
         pub fn connect(allocator: *Allocator, uri: Uri) !Self {
-            const port = uri.port orelse 80;
-            var socket = try SocketType.connect(allocator, uri.host.name, port);
+            var socket = try SocketType.connect(allocator, uri);
             return Self.init(allocator, socket);
         }
 
@@ -50,7 +49,18 @@ pub fn Connection(comptime SocketType: type) type {
             }
 
             var headers = Headers.init(self.allocator);
-            try headers.append("Host", uri.host.name);
+
+            var host = [_]u8{0} ** 100;
+            switch(uri.host) {
+                .ip => |address|{
+                    var ip = std.fmt.bufPrint(host[0..], "{}", .{address}) catch unreachable;
+                    try headers.append("Host", ip);
+                },
+                .name => |name| {
+                    try headers.append("Host", name);
+                }
+            }
+
             if (@hasField(@TypeOf(options), "headers")) {
                 var user_headers = self.getUserHeaders(options.headers);
                 try headers._items.appendSlice(user_headers);
@@ -292,4 +302,18 @@ test "Head request has no message body" {
     defer response.deinit();
 
     expect(response.body.len == 0);
+}
+
+test "Requesting an IP address and a port should be in HOST headers" {
+    const uri = try Uri.parse("http://127.0.0.1:8080/", false);
+
+    var connection = try ConnectionMock.connect(std.testing.allocator, uri);
+    defer connection.deinit();
+
+    try connection.socket.have_received("HTTP/1.1 200 OK\r\n\r\n");
+
+    var response = try connection.request(.Get, uri, .{});
+    defer response.deinit();
+
+    expect(connection.socket.have_sent("GET / HTTP/1.1\r\nHost: 127.0.0.1:8080\r\n\r\n"));
 }

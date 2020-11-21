@@ -2,16 +2,39 @@
 const Allocator = std.mem.Allocator;
 const network = @import("network");
 const std = @import("std");
-
+const Address = std.net.Address;
+const Uri = @import("http").Uri;
 
 pub const Socket = struct {
     target: network.Socket,
 
-    pub fn connect(allocator: *Allocator, host: []const u8, port: u16) !Socket {
-        var _socket = try network.connectToHost(allocator, host, port, .tcp);
-        return Socket {
-            .target = _socket
+    pub fn connect(allocator: *Allocator, uri: Uri) !Socket {
+        const port = uri.port orelse 80;
+        var socket = switch(uri.host) {
+            .name => |host| try Socket.connectToHost(allocator, host, port),
+            .ip => |address| try Socket.connecToAddress(allocator, address),
         };
+
+        return Socket { .target = socket };
+    }
+
+    fn connectToHost(allocator: *Allocator, host: []const u8, port: u16) !network.Socket {
+        return try network.connectToHost(allocator, host, port, .tcp);
+    }
+
+    fn connecToAddress(allocator: *Allocator, address: Address) !network.Socket {
+        switch(address.any.family) {
+            std.os.AF_INET => {
+                var socket = try network.Socket.create(.ipv4, .tcp);
+                const bytes = @ptrCast(*const [4]u8, &address.in.sa.addr);
+                try socket.connect(.{
+                    .address = .{ .ipv4 = network.Address.IPv4.init(bytes[0], bytes[1], bytes[2], bytes[3]) },
+                    .port = address.getPort(),
+                });
+                return socket;
+            },
+            else => unreachable,
+        }
     }
 
     pub fn receive(self: Socket, buffer: []u8) !usize {
@@ -33,7 +56,7 @@ pub const SocketMock = struct {
     receive_buffer: std.ArrayList([]const u8),
     write_buffer: std.ArrayList(u8),
 
-    pub fn connect(allocator: *Allocator, host: []const u8, port: u16) !SocketMock {
+    pub fn connect(allocator: *Allocator, uri: Uri) !SocketMock {
         return SocketMock {
             .allocator = allocator,
             .receive_buffer = std.ArrayList([]const u8).init(allocator),
