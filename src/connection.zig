@@ -5,6 +5,7 @@ const Socket = @import("socket.zig").Socket;
 const Request = @import("request.zig").Request;
 const Response = @import("response.zig").Response;
 const std = @import("std");
+const StreamingResponse = @import("response.zig").StreamingResponse;
 const Uri = @import("http").Uri;
 
 
@@ -56,6 +57,24 @@ pub fn Connection(comptime SocketType: type) type {
             };
         }
 
+        pub fn stream(self: *Self, method: Method, uri: Uri, options: anytype) !StreamingResponse(Self) {
+            var _request = try Request.init(self.allocator, method, uri, options);
+            defer _request.deinit();
+
+            try self.sendRequest(_request);
+
+            var response = try self.readResponse();
+
+            return StreamingResponse(Self) {
+                .allocator = self.allocator,
+                .buffer = response.raw_bytes,
+                .connection = self,
+                .status = response.statusCode,
+                .version = response.version,
+                .headers = response.headers,
+            };
+        }
+
         fn sendRequest(self: *Self, _request: Request) !void {
             var request_event = try h11.Request.init(_request.method, _request.path, _request.version, _request.headers);
 
@@ -92,7 +111,7 @@ pub fn Connection(comptime SocketType: type) type {
             };
         }
 
-        fn nextEvent(self: *Self) !h11.Event {
+        pub fn nextEvent(self: *Self) !h11.Event {
             while (true) {
                 var event = self.state.nextEvent() catch |err| switch (err) {
                     error.NeedData => {
@@ -260,6 +279,40 @@ test "Get a response in multiple socket read" {
     var headers = response.headers.items();
 
     expect(std.mem.eql(u8, headers[0].name.raw(), "Content-Length"));
+    expect(std.mem.eql(u8, headers[0].value, "14"));
 
     expect(response.body.len == 14);
+}
+
+
+test "Get a streaming response" {
+    const uri = try Uri.parse("http://httpbin.org", false);
+
+    var connection = try ConnectionMock.connect(std.heap.page_allocator, uri);
+
+    try connection.socket.have_received("HTTP/1.1 200 OK\r\nContent-Length: 3072\r\n\r\n");
+
+    var data = [_]u8{'a'} ** 1024;
+    try connection.socket.have_received(&data);
+    try connection.socket.have_received(&data);
+    try connection.socket.have_received(&data);
+
+    var response = try connection.stream(.Get, uri, .{});
+    defer response.deinit();
+
+    expect(response.status == .Ok);
+    expect(response.version == .Http11);
+
+    var headers = response.headers.items();
+    expect(std.mem.eql(u8, headers[0].name.raw(), "Content-Length"));
+    expect(std.mem.eql(u8, headers[0].value, "3072"));
+
+    while(true) {
+        var chunk = try response.next_chunk();
+
+        if (chunk == null) {
+            break;
+        }
+        expect(std.mem.eql(u8, chunk.?, &data));
+    }
 }
