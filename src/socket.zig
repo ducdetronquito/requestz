@@ -1,9 +1,10 @@
-
+const Address = std.net.Address;
 const Allocator = std.mem.Allocator;
+const LinearFifo = std.fifo.LinearFifo;
 const network = @import("network");
 const std = @import("std");
-const Address = std.net.Address;
 const Uri = @import("http").Uri;
+
 
 pub const Socket = struct {
     target: network.Socket,
@@ -53,19 +54,19 @@ pub const Socket = struct {
 
 pub const SocketMock = struct {
     allocator: *Allocator,
-    receive_buffer: std.ArrayList([]const u8),
+    receive_buffer: LinearFifo([]u8, .Dynamic),
     write_buffer: std.ArrayList(u8),
 
     pub fn connect(allocator: *Allocator, uri: Uri) !SocketMock {
         return SocketMock {
             .allocator = allocator,
-            .receive_buffer = std.ArrayList([]const u8).init(allocator),
+            .receive_buffer = LinearFifo([]u8, .Dynamic).init(allocator),
             .write_buffer = std.ArrayList(u8).init(allocator),
         };
     }
 
     pub fn receive(self: *SocketMock, buffer: []u8) !usize {
-        var result = self.receive_buffer.pop();
+        var result = self.receive_buffer.readItem() orelse unreachable;
         defer self.allocator.free(result);
 
         std.mem.copy(u8, buffer, result);
@@ -77,17 +78,13 @@ pub const SocketMock = struct {
     }
 
     pub fn close(self: *SocketMock) void {
-        for (self.receive_buffer.items) |chunk| {
-            self.allocator.free(chunk);
-        }
         self.receive_buffer.deinit();
-
         self.write_buffer.deinit();
     }
 
     pub fn have_received(self: *SocketMock, data: []const u8) !void {
         var copy = try std.mem.dupe(self.allocator, u8, data);
-        try self.receive_buffer.append(copy);
+        try self.receive_buffer.writeItem(copy);
     }
 
     pub fn have_sent(self: *SocketMock, data: []const u8) bool {

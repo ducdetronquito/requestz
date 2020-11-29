@@ -306,3 +306,26 @@ test "Request a URI without path defaults to /" {
 
     expect(connection.socket.have_sent("GET / HTTP/1.1\r\nHost: httpbin.org\r\n\r\n"));
 }
+
+
+test "Get a response in multiple socket read" {
+    const uri = try Uri.parse("http://httpbin.org", false);
+
+    var connection = try ConnectionMock.connect(std.heap.page_allocator, uri);
+    defer connection.deinit();
+
+    try connection.socket.have_received("HTTP/1.1 200 OK\r\nContent-Length: 14\r\n\r\n");
+    try connection.socket.have_received("Gotta go fast!");
+
+    var response = try connection.request(.Get, uri, .{});
+    defer response.deinit();
+
+    expect(response.status == .Ok);
+    expect(response.version == .Http11);
+
+    var headers = response.headers.items();
+
+    expect(std.mem.eql(u8, headers[0].name.raw(), "Content-Length"));
+
+    expect(response.body.len == 14);
+}
