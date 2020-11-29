@@ -1,16 +1,11 @@
 const Allocator = std.mem.Allocator;
 const h11 = @import("h11");
-const Header = @import("http").Header;
-const Headers = @import("http").Headers;
-const HeaderName = @import("http").HeaderName;
-const HeaderType = @import("http").HeaderType;
-const HeaderValue = @import("http").HeaderValue;
 const Method = @import("http").Method;
 const Socket = @import("socket.zig").Socket;
+const Request = @import("request.zig").Request;
 const Response = @import("response.zig").Response;
 const std = @import("std");
 const Uri = @import("http").Uri;
-const Version = @import("http").Version;
 
 
 pub const TcpConnection = Connection(Socket);
@@ -43,49 +38,13 @@ pub fn Connection(comptime SocketType: type) type {
         }
 
         pub fn request(self: *Self, method: Method, uri: Uri, options: anytype) !Response {
-            var version = Version.Http11;
-            if (@hasField(@TypeOf(options), "version")) {
-                version = options.version;
-            }
-
-            var headers = Headers.init(self.allocator);
-
-            var host = [_]u8{0} ** 100;
-            switch(uri.host) {
-                .ip => |address|{
-                    var ip = std.fmt.bufPrint(host[0..], "{}", .{address}) catch unreachable;
-                    try headers.append("Host", ip);
-                },
-                .name => |name| {
-                    try headers.append("Host", name);
-                }
-            }
-
-            if (@hasField(@TypeOf(options), "headers")) {
-                var user_headers = self.getUserHeaders(options.headers);
-                try headers._items.appendSlice(user_headers);
-            }
-
-            var content: ?[]const u8 = null;
-            if (@hasField(@TypeOf(options), "content")) {
-                content = options.content;
-            }
-
-            var path = if (uri.path.len != 0) uri.path else "/";
-
-            var _request = try h11.Request.init(method, path, version, headers);
+            var _request = try Request.init(self.allocator, method, uri, options);
             defer _request.deinit();
 
-            var content_length = try self.frameRequestBody(&_request, content);
             try self.sendRequest(_request);
-            try self.sendRequestData(content);
 
             var response = try self.readResponse();
             var body = try self.readResponseBody();
-
-            if (content_length != null) {
-                self.allocator.free(content_length.?);
-            }
 
             return Response {
                 .allocator = self.allocator,
@@ -97,47 +56,21 @@ pub fn Connection(comptime SocketType: type) type {
             };
         }
 
-        fn getUserHeaders(self: Self, user_headers: anytype) []Header {
-            const typeof = @TypeOf(user_headers);
-            const typeinfo = @typeInfo(typeof);
+        fn sendRequest(self: *Self, _request: Request) !void {
+            var request_event = try h11.Request.init(_request.method, _request.path, _request.version, _request.headers);
 
-            switch(typeinfo) {
-                .Struct => |obj| {
-                    return Header.as_slice(user_headers);
-                },
-                .Pointer => |ptr| {
-                    return user_headers;
-                },
-                else => {
-                    @compileError("Invalid headers type: You must provide either a http.Headers or an anonymous struct literal.");
+            var bytes = try self.state.send(h11.Event {.Request = request_event });
+            try self.socket.write(bytes);
+            self.allocator.free(bytes);
+
+            switch(_request.body) {
+                .Empty => return,
+                .ContentLength => |body| {
+                    var data_event = h11.Data.to_event(null, body.content);
+                    bytes = try self.state.send(data_event);
+                    try self.socket.write(bytes);
                 }
             }
-        }
-
-        fn frameRequestBody(self: *Self, _request: *h11.Request, content: ?[]const u8) !?[]const u8 {
-            if (content == null) {
-                return null;
-            }
-
-            var content_length = try std.fmt.allocPrint(self.allocator, "{d}", .{content.?.len});
-            try _request.headers.append("Content-Length", content_length);
-            return content_length;
-        }
-
-        fn sendRequest(self: *Self, _request: h11.Request) !void {
-            var bytes = try self.state.send(h11.Event {.Request = _request });
-            defer self.allocator.free(bytes);
-
-            try self.socket.write(bytes);
-        }
-
-        fn sendRequestData(self: *Self, content: ?[]const u8) !void {
-            if (content == null or content.?.len == 0) {
-                return;
-            }
-            var data_event = h11.Data.to_event(null, content.?);
-            var bytes = try self.state.send(data_event);
-            try self.socket.write(bytes);
         }
 
         fn readResponse(self: *Self) !h11.Response {
@@ -180,9 +113,10 @@ pub fn Connection(comptime SocketType: type) type {
 }
 
 
-const expect = std.testing.expect;
-const SocketMock = @import("socket.zig").SocketMock;
 const ConnectionMock = Connection(SocketMock);
+const expect = std.testing.expect;
+const Headers = @import("http").Headers;
+const SocketMock = @import("socket.zig").SocketMock;
 
 test "Get" {
     const uri = try Uri.parse("http://httpbin.org/get", false);
