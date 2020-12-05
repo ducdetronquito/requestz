@@ -1,16 +1,12 @@
 const Allocator = std.mem.Allocator;
 const h11 = @import("h11");
-const Header = @import("http").Header;
-const Headers = @import("http").Headers;
-const HeaderName = @import("http").HeaderName;
-const HeaderType = @import("http").HeaderType;
-const HeaderValue = @import("http").HeaderValue;
 const Method = @import("http").Method;
 const Socket = @import("socket.zig").Socket;
+const Request = @import("request.zig").Request;
 const Response = @import("response.zig").Response;
 const std = @import("std");
+const StreamingResponse = @import("response.zig").StreamingResponse;
 const Uri = @import("http").Uri;
-const Version = @import("http").Version;
 
 
 pub const TcpConnection = Connection(Socket);
@@ -43,49 +39,13 @@ pub fn Connection(comptime SocketType: type) type {
         }
 
         pub fn request(self: *Self, method: Method, uri: Uri, options: anytype) !Response {
-            var version = Version.Http11;
-            if (@hasField(@TypeOf(options), "version")) {
-                version = options.version;
-            }
-
-            var headers = Headers.init(self.allocator);
-
-            var host = [_]u8{0} ** 100;
-            switch(uri.host) {
-                .ip => |address|{
-                    var ip = std.fmt.bufPrint(host[0..], "{}", .{address}) catch unreachable;
-                    try headers.append("Host", ip);
-                },
-                .name => |name| {
-                    try headers.append("Host", name);
-                }
-            }
-
-            if (@hasField(@TypeOf(options), "headers")) {
-                var user_headers = self.getUserHeaders(options.headers);
-                try headers._items.appendSlice(user_headers);
-            }
-
-            var content: ?[]const u8 = null;
-            if (@hasField(@TypeOf(options), "content")) {
-                content = options.content;
-            }
-
-            var path = if (uri.path.len != 0) uri.path else "/";
-
-            var _request = try h11.Request.init(method, path, version, headers);
+            var _request = try Request.init(self.allocator, method, uri, options);
             defer _request.deinit();
 
-            var content_length = try self.frameRequestBody(&_request, content);
             try self.sendRequest(_request);
-            try self.sendRequestData(content);
 
             var response = try self.readResponse();
             var body = try self.readResponseBody();
-
-            if (content_length != null) {
-                self.allocator.free(content_length.?);
-            }
 
             return Response {
                 .allocator = self.allocator,
@@ -97,47 +57,39 @@ pub fn Connection(comptime SocketType: type) type {
             };
         }
 
-        fn getUserHeaders(self: Self, user_headers: anytype) []Header {
-            const typeof = @TypeOf(user_headers);
-            const typeinfo = @typeInfo(typeof);
+        pub fn stream(self: *Self, method: Method, uri: Uri, options: anytype) !StreamingResponse(Self) {
+            var _request = try Request.init(self.allocator, method, uri, options);
+            defer _request.deinit();
 
-            switch(typeinfo) {
-                .Struct => |obj| {
-                    return Header.as_slice(user_headers);
-                },
-                .Pointer => |ptr| {
-                    return user_headers;
-                },
-                else => {
-                    @compileError("Invalid headers type: You must provide either a http.Headers or an anonymous struct literal.");
+            try self.sendRequest(_request);
+
+            var response = try self.readResponse();
+
+            return StreamingResponse(Self) {
+                .allocator = self.allocator,
+                .buffer = response.raw_bytes,
+                .connection = self,
+                .status = response.statusCode,
+                .version = response.version,
+                .headers = response.headers,
+            };
+        }
+
+        fn sendRequest(self: *Self, _request: Request) !void {
+            var request_event = try h11.Request.init(_request.method, _request.path, _request.version, _request.headers);
+
+            var bytes = try self.state.send(h11.Event {.Request = request_event });
+            try self.socket.write(bytes);
+            self.allocator.free(bytes);
+
+            switch(_request.body) {
+                .Empty => return,
+                .ContentLength => |body| {
+                    var data_event = h11.Data.to_event(null, body.content);
+                    bytes = try self.state.send(data_event);
+                    try self.socket.write(bytes);
                 }
             }
-        }
-
-        fn frameRequestBody(self: *Self, _request: *h11.Request, content: ?[]const u8) !?[]const u8 {
-            if (content == null) {
-                return null;
-            }
-
-            var content_length = try std.fmt.allocPrint(self.allocator, "{d}", .{content.?.len});
-            try _request.headers.append("Content-Length", content_length);
-            return content_length;
-        }
-
-        fn sendRequest(self: *Self, _request: h11.Request) !void {
-            var bytes = try self.state.send(h11.Event {.Request = _request });
-            defer self.allocator.free(bytes);
-
-            try self.socket.write(bytes);
-        }
-
-        fn sendRequestData(self: *Self, content: ?[]const u8) !void {
-            if (content == null or content.?.len == 0) {
-                return;
-            }
-            var data_event = h11.Data.to_event(null, content.?);
-            var bytes = try self.state.send(data_event);
-            try self.socket.write(bytes);
         }
 
         fn readResponse(self: *Self) !h11.Response {
@@ -159,7 +111,7 @@ pub fn Connection(comptime SocketType: type) type {
             };
         }
 
-        fn nextEvent(self: *Self) !h11.Event {
+        pub fn nextEvent(self: *Self) !h11.Event {
             while (true) {
                 var event = self.state.nextEvent() catch |err| switch (err) {
                     error.NeedData => {
@@ -180,9 +132,10 @@ pub fn Connection(comptime SocketType: type) type {
 }
 
 
-const expect = std.testing.expect;
-const SocketMock = @import("socket.zig").SocketMock;
 const ConnectionMock = Connection(SocketMock);
+const expect = std.testing.expect;
+const Headers = @import("http").Headers;
+const SocketMock = @import("socket.zig").SocketMock;
 
 test "Get" {
     const uri = try Uri.parse("http://httpbin.org/get", false);
@@ -305,4 +258,61 @@ test "Request a URI without path defaults to /" {
     defer response.deinit();
 
     expect(connection.socket.have_sent("GET / HTTP/1.1\r\nHost: httpbin.org\r\n\r\n"));
+}
+
+
+test "Get a response in multiple socket read" {
+    const uri = try Uri.parse("http://httpbin.org", false);
+
+    var connection = try ConnectionMock.connect(std.heap.page_allocator, uri);
+    defer connection.deinit();
+
+    try connection.socket.have_received("HTTP/1.1 200 OK\r\nContent-Length: 14\r\n\r\n");
+    try connection.socket.have_received("Gotta go fast!");
+
+    var response = try connection.request(.Get, uri, .{});
+    defer response.deinit();
+
+    expect(response.status == .Ok);
+    expect(response.version == .Http11);
+
+    var headers = response.headers.items();
+
+    expect(std.mem.eql(u8, headers[0].name.raw(), "Content-Length"));
+    expect(std.mem.eql(u8, headers[0].value, "14"));
+
+    expect(response.body.len == 14);
+}
+
+
+test "Get a streaming response" {
+    const uri = try Uri.parse("http://httpbin.org", false);
+
+    var connection = try ConnectionMock.connect(std.heap.page_allocator, uri);
+
+    try connection.socket.have_received("HTTP/1.1 200 OK\r\nContent-Length: 3072\r\n\r\n");
+
+    var data = [_]u8{'a'} ** 1024;
+    try connection.socket.have_received(&data);
+    try connection.socket.have_received(&data);
+    try connection.socket.have_received(&data);
+
+    var response = try connection.stream(.Get, uri, .{});
+    defer response.deinit();
+
+    expect(response.status == .Ok);
+    expect(response.version == .Http11);
+
+    var headers = response.headers.items();
+    expect(std.mem.eql(u8, headers[0].name.raw(), "Content-Length"));
+    expect(std.mem.eql(u8, headers[0].value, "3072"));
+
+    while(true) {
+        var chunk = try response.next_chunk();
+
+        if (chunk == null) {
+            break;
+        }
+        expect(std.mem.eql(u8, chunk.?, &data));
+    }
 }

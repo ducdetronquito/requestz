@@ -4,6 +4,7 @@ const Method = @import("http").Method;
 const network = @import("network");
 const Response = @import("response.zig").Response;
 const std = @import("std");
+const StreamingResponse = @import("response.zig").StreamingResponse;
 const Uri = @import("http").Uri;
 
 
@@ -58,6 +59,14 @@ pub const Client = struct {
         defer connection.deinit();
 
         return connection.request(method, uri, args);
+    }
+
+    pub fn stream(self: Client, method: Method, url: []const u8, args: anytype) !StreamingResponse(TcpConnection) {
+        const uri = try Uri.parse(url, false);
+
+        var connection = try self.get_connection(uri);
+
+        return connection.stream(method, uri, args);
     }
 
     pub fn trace(self: Client, url: []const u8, args: anytype) !Response {
