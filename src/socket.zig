@@ -13,7 +13,7 @@ pub const Socket = struct {
         const port = uri.port orelse 80;
         var socket = switch(uri.host) {
             .name => |host| try Socket.connectToHost(allocator, host, port),
-            .ip => |address| try Socket.connecToAddress(allocator, address),
+            .ip => |address| try Socket.connectToAddress(allocator, address),
         };
 
         return Socket { .target = socket };
@@ -23,7 +23,7 @@ pub const Socket = struct {
         return try network.connectToHost(allocator, host, port, .tcp);
     }
 
-    fn connecToAddress(allocator: *Allocator, address: Address) !network.Socket {
+    fn connectToAddress(allocator: *Allocator, address: Address) !network.Socket {
         switch(address.any.family) {
             std.os.AF_INET => {
                 var socket = try network.Socket.create(.ipv4, .tcp);
