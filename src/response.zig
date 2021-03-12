@@ -48,14 +48,13 @@ pub fn StreamingResponse(comptime ConnectionType: type) type {
             self.connection.deinit();
         }
 
-        pub fn next_chunk(self: *Self) !?[]const u8 {
-            var event = try self.connection.nextEvent();
-            return switch (event) {
-                .Data => |data| {
-                    return data.content;
-                },
-                else => null,
-            };
+        pub fn read(self: *Self, buffer: []u8) !usize {
+            var event = try self.connection.nextEvent(.{ .buffer = buffer });
+            switch(event) {
+                .Data => |data| return data.bytes.len,
+                .EndOfMessage => return 0,
+                else => unreachable,
+            }
         }
     };
 }

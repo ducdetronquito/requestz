@@ -49,28 +49,27 @@ pub const Socket = struct {
     pub fn close(self: *Socket) void {
         self.target.close();
     }
+
+    pub fn reader(self: *Socket) network.Socket.Reader {
+        return self.target.reader();
+    }
 };
 
 
 pub const SocketMock = struct {
     allocator: *Allocator,
-    receive_buffer: LinearFifo([]u8, .Dynamic),
+    receive_buffer: LinearFifo(u8, .Dynamic),
     write_buffer: std.ArrayList(u8),
+
+    const Self = @This();
+    const Reader = std.io.Reader(*Self, error{}, read);
 
     pub fn connect(allocator: *Allocator, uri: Uri) !SocketMock {
         return SocketMock {
             .allocator = allocator,
-            .receive_buffer = LinearFifo([]u8, .Dynamic).init(allocator),
+            .receive_buffer = LinearFifo(u8, .Dynamic).init(allocator),
             .write_buffer = std.ArrayList(u8).init(allocator),
         };
-    }
-
-    pub fn receive(self: *SocketMock, buffer: []u8) !usize {
-        var result = self.receive_buffer.readItem() orelse unreachable;
-        defer self.allocator.free(result);
-
-        std.mem.copy(u8, buffer, result);
-        return result.len;
     }
 
     pub fn write(self: *SocketMock, buffer: []const u8) !void {
@@ -82,12 +81,19 @@ pub const SocketMock = struct {
         self.write_buffer.deinit();
     }
 
-    pub fn have_received(self: *SocketMock, data: []const u8) !void {
-        var copy = try std.mem.dupe(self.allocator, u8, data);
-        try self.receive_buffer.writeItem(copy);
+    pub fn receive(self: *SocketMock, data: []const u8) !void {
+        try self.receive_buffer.write(data);
     }
 
     pub fn have_sent(self: *SocketMock, data: []const u8) bool {
         return std.mem.eql(u8, self.write_buffer.items, data);
+    }
+
+    pub fn reader(self: *SocketMock) Reader {
+        return .{ .context = self };
+    }
+
+    fn read(self: *SocketMock, dest: []u8) !usize {
+        return self.receive_buffer.read(dest);
     }
 };
