@@ -85,48 +85,38 @@ pub fn Connection(comptime SocketType: type) type {
             switch(_request.body) {
                 .Empty => return,
                 .ContentLength => |body| {
-                    var data_event = h11.Data.to_event(null, body.content);
-                    bytes = try self.state.send(data_event);
+                    bytes = try self.state.send(.{ .Data = h11.Data{ .bytes = body.content } });
                     try self.socket.write(bytes);
                 }
             }
         }
 
         fn readResponse(self: *Self) !h11.Response {
-            var event = try self.nextEvent();
-            switch (event) {
-                .Response => |response| {
-                    return response;
-                },
-                else => unreachable,
-            }
+            var reader = self.socket.reader();
+            var event = try self.state.nextEvent(reader, .{});
+            return event.Response;
         }
 
         fn readResponseBody(self: *Self) ![]const u8 {
-            var event = try self.nextEvent();
-            return switch (event) {
-                .Data => |data| data.content,
-                .EndOfMessage => "",
-                else => unreachable,
-            };
+            var reader = self.socket.reader();
+
+            var body = std.ArrayList(u8).init(self.allocator);
+            errdefer body.deinit();
+
+            while (true) {
+                var buffer: [4096]u8 = undefined;
+                var event = try self.state.nextEvent(reader, .{ .buffer = &buffer });
+                switch(event) {
+                    .Data => |data| try body.appendSlice(data.bytes),
+                    .EndOfMessage => return body.toOwnedSlice(),
+                    else => unreachable,
+                }
+            }
         }
 
-        pub fn nextEvent(self: *Self) !h11.Event {
-            while (true) {
-                var event = self.state.nextEvent() catch |err| switch (err) {
-                    error.NeedData => {
-                        var buffer: [1024]u8 = undefined;
-                        const bytesReceived = try self.socket.receive(&buffer);
-                        var content = buffer[0..bytesReceived];
-                        try self.state.receive(content);
-                        continue;
-                    },
-                    else => {
-                        return err;
-                    }
-                };
-                return event;
-            }
+        pub fn nextEvent(self: *Self, options: anytype) !h11.Event {
+            var reader = self.socket.reader();
+            return self.state.nextEvent(reader, options);
         }
     };
 }
@@ -142,7 +132,7 @@ test "Get" {
     var connection = try ConnectionMock.connect(std.testing.allocator, uri);
     defer connection.deinit();
 
-    try connection.socket.have_received(
+    try connection.socket.receive(
         "HTTP/1.1 200 OK\r\nContent-Length: 14\r\nServer: gunicorn/19.9.0\r\n\r\n"
         ++ "Gotta Go Fast!"
     );
@@ -166,7 +156,7 @@ test "Get with headers" {
 
     var connection = try ConnectionMock.connect(std.testing.allocator, uri);
     defer connection.deinit();
-    try connection.socket.have_received(
+    try connection.socket.receive(
         "HTTP/1.1 200 OK\r\nContent-Length: 14\r\nServer: gunicorn/19.9.0\r\n\r\n"
         ++ "Gotta Go Fast!"
     );
@@ -186,7 +176,7 @@ test "Get with compile-time headers" {
 
     var connection = try ConnectionMock.connect(std.testing.allocator, uri);
     defer connection.deinit();
-    try connection.socket.have_received(
+    try connection.socket.receive(
         "HTTP/1.1 200 OK\r\nContent-Length: 14\r\nServer: gunicorn/19.9.0\r\n\r\n"
         ++ "Gotta Go Fast!"
     );
@@ -206,7 +196,7 @@ test "Post binary data" {
 
     var connection = try ConnectionMock.connect(std.testing.allocator, uri);
     defer connection.deinit();
-    try connection.socket.have_received(
+    try connection.socket.receive(
         "HTTP/1.1 200 OK\r\nContent-Length: 14\r\nServer: gunicorn/19.9.0\r\n\r\n"
         ++ "Gotta Go Fast!"
     );
@@ -223,7 +213,7 @@ test "Head request has no message body" {
     var connection = try ConnectionMock.connect(std.testing.allocator, uri);
     defer connection.deinit();
 
-    try connection.socket.have_received("HTTP/1.1 200 OK\r\nContent-Length: 14\r\nServer: gunicorn/19.9.0\r\n\r\n");
+    try connection.socket.receive("HTTP/1.1 200 OK\r\nContent-Length: 14\r\nServer: gunicorn/19.9.0\r\n\r\n");
 
     var response = try connection.request(.Head, uri, .{});
     defer response.deinit();
@@ -231,13 +221,13 @@ test "Head request has no message body" {
     expect(response.body.len == 0);
 }
 
-test "Requesting an IP address and a port should be in HOST headers" {
+test "IP address and a port should be set in HOST headers" {
     const uri = try Uri.parse("http://127.0.0.1:8080/", false);
 
     var connection = try ConnectionMock.connect(std.testing.allocator, uri);
     defer connection.deinit();
 
-    try connection.socket.have_received("HTTP/1.1 200 OK\r\n\r\n");
+    try connection.socket.receive("HTTP/1.1 200 OK\r\n\r\n");
 
     var response = try connection.request(.Get, uri, .{});
     defer response.deinit();
@@ -245,14 +235,13 @@ test "Requesting an IP address and a port should be in HOST headers" {
     expect(connection.socket.have_sent("GET / HTTP/1.1\r\nHost: 127.0.0.1:8080\r\n\r\n"));
 }
 
-
 test "Request a URI without path defaults to /" {
     const uri = try Uri.parse("http://httpbin.org", false);
 
     var connection = try ConnectionMock.connect(std.testing.allocator, uri);
     defer connection.deinit();
 
-    try connection.socket.have_received("HTTP/1.1 200 OK\r\n\r\n");
+    try connection.socket.receive("HTTP/1.1 200 OK\r\n\r\n");
 
     var response = try connection.request(.Get, uri, .{});
     defer response.deinit();
@@ -260,15 +249,14 @@ test "Request a URI without path defaults to /" {
     expect(connection.socket.have_sent("GET / HTTP/1.1\r\nHost: httpbin.org\r\n\r\n"));
 }
 
-
 test "Get a response in multiple socket read" {
     const uri = try Uri.parse("http://httpbin.org", false);
 
     var connection = try ConnectionMock.connect(std.heap.page_allocator, uri);
     defer connection.deinit();
 
-    try connection.socket.have_received("HTTP/1.1 200 OK\r\nContent-Length: 14\r\n\r\n");
-    try connection.socket.have_received("Gotta go fast!");
+    try connection.socket.receive("HTTP/1.1 200 OK\r\nContent-Length: 14\r\n\r\n");
+    try connection.socket.receive("Gotta go fast!");
 
     var response = try connection.request(.Get, uri, .{});
     defer response.deinit();
@@ -284,18 +272,15 @@ test "Get a response in multiple socket read" {
     expect(response.body.len == 14);
 }
 
-
 test "Get a streaming response" {
     const uri = try Uri.parse("http://httpbin.org", false);
 
     var connection = try ConnectionMock.connect(std.heap.page_allocator, uri);
 
-    try connection.socket.have_received("HTTP/1.1 200 OK\r\nContent-Length: 3072\r\n\r\n");
+    try connection.socket.receive("HTTP/1.1 200 OK\r\nContent-Length: 12288\r\n\r\n");
 
-    var data = [_]u8{'a'} ** 1024;
-    try connection.socket.have_received(&data);
-    try connection.socket.have_received(&data);
-    try connection.socket.have_received(&data);
+    var body = "a" ** 12288;
+    try connection.socket.receive(body);
 
     var response = try connection.stream(.Get, uri, .{});
     defer response.deinit();
@@ -305,14 +290,19 @@ test "Get a streaming response" {
 
     var headers = response.headers.items();
     expect(std.mem.eql(u8, headers[0].name.raw(), "Content-Length"));
-    expect(std.mem.eql(u8, headers[0].value, "3072"));
+    expect(std.mem.eql(u8, headers[0].value, "12288"));
+
+    var result = std.ArrayList(u8).init(std.testing.allocator);
+    defer result.deinit();
 
     while(true) {
-        var chunk = try response.next_chunk();
-
-        if (chunk == null) {
+        var buffer: [4096]u8 = undefined;
+        var bytesRead = try response.read(&buffer);
+        if (bytesRead == 0) {
             break;
         }
-        expect(std.mem.eql(u8, chunk.?, &data));
+        try result.appendSlice(buffer[0..bytesRead]);
     }
+
+    expect(std.mem.eql(u8, result.items, body));
 }

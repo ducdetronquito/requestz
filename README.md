@@ -48,6 +48,21 @@ var tree = try response.json();
 defer tree.deinit();
 ```
 
+Stream a response
+```
+var response = try client.stream(.Get, "http://httpbin.org/", .{});
+defer response.deinit();
+
+while(true) {
+    var buffer: [4096]u8 = undefined;
+    var bytesRead = try response.read(&buffer);
+    if (bytesRead == 0) {
+        break;
+    }
+    std.debug.print("{}", .{buffer[0..bytesRead]});
+}
+```
+
 Other standard HTTP method shortcuts:
 - `client.connect`
 - `client.delete`
