@@ -49,7 +49,7 @@ defer tree.deinit();
 ```
 
 Stream a response
-```
+```zig
 var response = try client.stream(.Get, "http://httpbin.org/", .{});
 defer response.deinit();
 
