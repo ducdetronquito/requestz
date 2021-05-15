@@ -1,7 +1,7 @@
 const Allocator = std.mem.Allocator;
 const h11 = @import("h11");
 const Method = @import("http").Method;
-const Socket = @import("socket.zig").Socket;
+const TcpSocket = @import("socket.zig").TcpSocket;
 const Request = @import("request.zig").Request;
 const Response = @import("response.zig").Response;
 const std = @import("std");
@@ -9,7 +9,7 @@ const StreamingResponse = @import("response.zig").StreamingResponse;
 const Uri = @import("http").Uri;
 
 
-pub const TcpConnection = Connection(Socket);
+pub const TcpConnection = Connection(TcpSocket);
 
 
 pub fn Connection(comptime SocketType: type) type {
@@ -132,7 +132,7 @@ test "Get" {
     var connection = try ConnectionMock.connect(std.testing.allocator, uri);
     defer connection.deinit();
 
-    try connection.socket.receive(
+    try connection.socket.target.receive(
         "HTTP/1.1 200 OK\r\nContent-Length: 14\r\nServer: gunicorn/19.9.0\r\n\r\n"
         ++ "Gotta Go Fast!"
     );
@@ -156,7 +156,7 @@ test "Get with headers" {
 
     var connection = try ConnectionMock.connect(std.testing.allocator, uri);
     defer connection.deinit();
-    try connection.socket.receive(
+    try connection.socket.target.receive(
         "HTTP/1.1 200 OK\r\nContent-Length: 14\r\nServer: gunicorn/19.9.0\r\n\r\n"
         ++ "Gotta Go Fast!"
     );
@@ -168,7 +168,7 @@ test "Get with headers" {
     var response = try connection.request(.Get, uri, .{ .headers = headers.items()});
     defer response.deinit();
 
-    expect(connection.socket.have_sent("GET /get HTTP/1.1\r\nHost: httpbin.org\r\nGotta-go: Fast!\r\n\r\n"));
+    expect(connection.socket.target.have_sent("GET /get HTTP/1.1\r\nHost: httpbin.org\r\nGotta-go: Fast!\r\n\r\n"));
 }
 
 test "Get with compile-time headers" {
@@ -176,7 +176,7 @@ test "Get with compile-time headers" {
 
     var connection = try ConnectionMock.connect(std.testing.allocator, uri);
     defer connection.deinit();
-    try connection.socket.receive(
+    try connection.socket.target.receive(
         "HTTP/1.1 200 OK\r\nContent-Length: 14\r\nServer: gunicorn/19.9.0\r\n\r\n"
         ++ "Gotta Go Fast!"
     );
@@ -188,7 +188,7 @@ test "Get with compile-time headers" {
     var response = try connection.request(.Get, uri, .{ .headers = headers});
     defer response.deinit();
 
-    expect(connection.socket.have_sent("GET /get HTTP/1.1\r\nHost: httpbin.org\r\nGotta-go: Fast!\r\n\r\n"));
+    expect(connection.socket.target.have_sent("GET /get HTTP/1.1\r\nHost: httpbin.org\r\nGotta-go: Fast!\r\n\r\n"));
 }
 
 test "Post binary data" {
@@ -196,7 +196,7 @@ test "Post binary data" {
 
     var connection = try ConnectionMock.connect(std.testing.allocator, uri);
     defer connection.deinit();
-    try connection.socket.receive(
+    try connection.socket.target.receive(
         "HTTP/1.1 200 OK\r\nContent-Length: 14\r\nServer: gunicorn/19.9.0\r\n\r\n"
         ++ "Gotta Go Fast!"
     );
@@ -204,7 +204,7 @@ test "Post binary data" {
     var response = try connection.request(.Post, uri, .{ .content = "Gotta go fast!"});
     defer response.deinit();
 
-    expect(connection.socket.have_sent("POST /post HTTP/1.1\r\nHost: httpbin.org\r\nContent-Length: 14\r\n\r\nGotta go fast!"));
+    expect(connection.socket.target.have_sent("POST /post HTTP/1.1\r\nHost: httpbin.org\r\nContent-Length: 14\r\n\r\nGotta go fast!"));
 }
 
 
@@ -213,7 +213,7 @@ test "Head request has no message body" {
     var connection = try ConnectionMock.connect(std.testing.allocator, uri);
     defer connection.deinit();
 
-    try connection.socket.receive("HTTP/1.1 200 OK\r\nContent-Length: 14\r\nServer: gunicorn/19.9.0\r\n\r\n");
+    try connection.socket.target.receive("HTTP/1.1 200 OK\r\nContent-Length: 14\r\nServer: gunicorn/19.9.0\r\n\r\n");
 
     var response = try connection.request(.Head, uri, .{});
     defer response.deinit();
@@ -227,12 +227,12 @@ test "IP address and a port should be set in HOST headers" {
     var connection = try ConnectionMock.connect(std.testing.allocator, uri);
     defer connection.deinit();
 
-    try connection.socket.receive("HTTP/1.1 200 OK\r\n\r\n");
+    try connection.socket.target.receive("HTTP/1.1 200 OK\r\n\r\n");
 
     var response = try connection.request(.Get, uri, .{});
     defer response.deinit();
 
-    expect(connection.socket.have_sent("GET / HTTP/1.1\r\nHost: 127.0.0.1:8080\r\n\r\n"));
+    expect(connection.socket.target.have_sent("GET / HTTP/1.1\r\nHost: 127.0.0.1:8080\r\n\r\n"));
 }
 
 test "Request a URI without path defaults to /" {
@@ -241,12 +241,12 @@ test "Request a URI without path defaults to /" {
     var connection = try ConnectionMock.connect(std.testing.allocator, uri);
     defer connection.deinit();
 
-    try connection.socket.receive("HTTP/1.1 200 OK\r\n\r\n");
+    try connection.socket.target.receive("HTTP/1.1 200 OK\r\n\r\n");
 
     var response = try connection.request(.Get, uri, .{});
     defer response.deinit();
 
-    expect(connection.socket.have_sent("GET / HTTP/1.1\r\nHost: httpbin.org\r\n\r\n"));
+    expect(connection.socket.target.have_sent("GET / HTTP/1.1\r\nHost: httpbin.org\r\n\r\n"));
 }
 
 test "Get a response in multiple socket read" {
@@ -255,8 +255,8 @@ test "Get a response in multiple socket read" {
     var connection = try ConnectionMock.connect(std.heap.page_allocator, uri);
     defer connection.deinit();
 
-    try connection.socket.receive("HTTP/1.1 200 OK\r\nContent-Length: 14\r\n\r\n");
-    try connection.socket.receive("Gotta go fast!");
+    try connection.socket.target.receive("HTTP/1.1 200 OK\r\nContent-Length: 14\r\n\r\n");
+    try connection.socket.target.receive("Gotta go fast!");
 
     var response = try connection.request(.Get, uri, .{});
     defer response.deinit();
@@ -277,10 +277,10 @@ test "Get a streaming response" {
 
     var connection = try ConnectionMock.connect(std.heap.page_allocator, uri);
 
-    try connection.socket.receive("HTTP/1.1 200 OK\r\nContent-Length: 12288\r\n\r\n");
+    try connection.socket.target.receive("HTTP/1.1 200 OK\r\nContent-Length: 12288\r\n\r\n");
 
     var body = "a" ** 12288;
-    try connection.socket.receive(body);
+    try connection.socket.target.receive(body);
 
     var response = try connection.stream(.Get, uri, .{});
     defer response.deinit();
