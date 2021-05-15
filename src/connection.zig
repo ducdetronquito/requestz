@@ -298,3 +298,31 @@ test "Get a streaming response" {
 
     expect(std.mem.eql(u8, result.items, body));
 }
+
+test "Get a chunk encoded response" {
+    const uri = try Uri.parse("http://httpbin.org/get", false);
+    var connection = try ConnectionMock.connect(std.testing.allocator, uri);
+    defer connection.deinit();
+
+    try connection.socket.target.receive(
+        "HTTP/1.1 200 OK\r\n"
+        ++ "Transfer-Encoding: chunked\r\n\r\n"
+        ++ "7\r\nMozilla\r\n"
+        ++ "9\r\nDeveloper\r\n"
+        ++ "7\r\nNetwork\r\n"
+        ++ "0\r\n\r\n"
+    );
+
+    var response = try connection.request(.Get, uri, .{});
+    defer response.deinit();
+
+    expect(response.status == .Ok);
+    expect(response.version == .Http11);
+
+    var headers = response.headers.items();
+
+    expect(std.mem.eql(u8, headers[0].name.raw(), "Transfer-Encoding"));
+    expect(std.mem.eql(u8, headers[0].value, "chunked"));
+
+    expect(std.mem.eql(u8, response.body, "MozillaDeveloperNetwork"));
+}
