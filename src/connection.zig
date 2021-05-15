@@ -11,20 +11,20 @@ const Uri = @import("http").Uri;
 
 pub const TcpConnection = Connection(TcpSocket);
 
-
 pub fn Connection(comptime SocketType: type) type {
     return struct {
         const Self = @This();
+        const H11Client = h11.Client(SocketType.Reader, SocketType.Writer);
 
         allocator: *Allocator,
-        state: h11.Client,
+        state: H11Client,
         socket: SocketType,
 
         pub fn init(allocator: *Allocator, socket: SocketType) Self {
             return Self {
                 .allocator = allocator,
                 .socket = socket,
-                .state = h11.Client.init(allocator),
+                .state = H11Client.init(allocator, socket.reader(), socket.writer()),
             };
         }
 
@@ -78,34 +78,28 @@ pub fn Connection(comptime SocketType: type) type {
         fn sendRequest(self: *Self, _request: Request) !void {
             var request_event = try h11.Request.init(_request.method, _request.path, _request.version, _request.headers);
 
-            var bytes = try self.state.send(h11.Event {.Request = request_event });
-            try self.socket.write(bytes);
-            self.allocator.free(bytes);
+            try self.state.send(h11.Event {.Request = request_event });
 
             switch(_request.body) {
                 .Empty => return,
                 .ContentLength => |body| {
-                    bytes = try self.state.send(.{ .Data = h11.Data{ .bytes = body.content } });
-                    try self.socket.write(bytes);
+                    try self.state.send(.{ .Data = h11.Data{ .bytes = body.content } });
                 }
             }
         }
 
         fn readResponse(self: *Self) !h11.Response {
-            var reader = self.socket.reader();
-            var event = try self.state.nextEvent(reader, .{});
+            var event = try self.state.nextEvent(.{});
             return event.Response;
         }
 
         fn readResponseBody(self: *Self) ![]const u8 {
-            var reader = self.socket.reader();
-
             var body = std.ArrayList(u8).init(self.allocator);
             errdefer body.deinit();
 
             while (true) {
                 var buffer: [4096]u8 = undefined;
-                var event = try self.state.nextEvent(reader, .{ .buffer = &buffer });
+                var event = try self.state.nextEvent(.{ .buffer = &buffer });
                 switch(event) {
                     .Data => |data| try body.appendSlice(data.bytes),
                     .EndOfMessage => return body.toOwnedSlice(),
@@ -115,8 +109,7 @@ pub fn Connection(comptime SocketType: type) type {
         }
 
         pub fn nextEvent(self: *Self, options: anytype) !h11.Event {
-            var reader = self.socket.reader();
-            return self.state.nextEvent(reader, options);
+            return self.state.nextEvent(options);
         }
     };
 }
@@ -206,7 +199,6 @@ test "Post binary data" {
 
     expect(connection.socket.target.have_sent("POST /post HTTP/1.1\r\nHost: httpbin.org\r\nContent-Length: 14\r\n\r\nGotta go fast!"));
 }
-
 
 test "Head request has no message body" {
     const uri = try Uri.parse("http://httpbin.org/head", false);
