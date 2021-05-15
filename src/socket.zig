@@ -6,94 +6,140 @@ const std = @import("std");
 const Uri = @import("http").Uri;
 
 
-pub const Socket = struct {
-    target: network.Socket,
+pub const TcpSocket = SocketWrapper(ZigNetwork);
+pub const SocketMock = SocketWrapper(NetworkMock);
 
-    pub fn connect(allocator: *Allocator, uri: Uri) !Socket {
-        const port = uri.port orelse 80;
-        var socket = switch(uri.host) {
-            .name => |host| try Socket.connectToHost(allocator, host, port),
-            .ip => |address| try Socket.connectToAddress(allocator, address),
-        };
 
-        return Socket { .target = socket };
-    }
+fn SocketWrapper(comptime Engine: type) type {
+    return struct {
+        target: Engine.Socket,
 
-    fn connectToHost(allocator: *Allocator, host: []const u8, port: u16) !network.Socket {
-        return try network.connectToHost(allocator, host, port, .tcp);
-    }
+        pub const Reader = Engine.Socket.Reader;
+        pub const Writer = Engine.Socket.Writer;
+        const Self = @This();
 
-    fn connectToAddress(allocator: *Allocator, address: Address) !network.Socket {
-        switch(address.any.family) {
-            std.os.AF_INET => {
-                var socket = try network.Socket.create(.ipv4, .tcp);
-                const bytes = @ptrCast(*const [4]u8, &address.in.sa.addr);
-                try socket.connect(.{
-                    .address = .{ .ipv4 = network.Address.IPv4.init(bytes[0], bytes[1], bytes[2], bytes[3]) },
-                    .port = address.getPort(),
-                });
-                return socket;
-            },
-            else => unreachable,
+        pub fn connect(allocator: *Allocator, uri: Uri) !Self {
+            const port = uri.port orelse 80;
+            var socket = switch(uri.host) {
+                .name => |host| try Self.connectToHost(allocator, host, port),
+                .ip => |address| try Self.connectToAddress(allocator, address),
+            };
+
+            return Self { .target = socket };
         }
-    }
 
-    pub fn receive(self: Socket, buffer: []u8) !usize {
-        return try self.target.receive(buffer);
-    }
+        pub fn close(self: *Self) void {
+            self.target.close();
+        }
 
-    pub fn write(self: Socket, buffer: []const u8) !void {
-        try self.target.writer().writeAll(buffer);
-    }
+        pub fn writer(self: Self) Writer {
+            return self.target.writer();
+        }
 
-    pub fn close(self: *Socket) void {
-        self.target.close();
-    }
+        pub fn reader(self: Self) Reader {
+            return self.target.reader();
+        }
 
-    pub fn reader(self: *Socket) network.Socket.Reader {
-        return self.target.reader();
+        fn connectToHost(allocator: *Allocator, host: []const u8, port: u16) !Engine.Socket {
+            return try Engine.connectToHost(allocator, host, port, .tcp);
+        }
+
+        fn connectToAddress(allocator: *Allocator, address: Address) !Engine.Socket {
+            switch(address.any.family) {
+                std.os.AF_INET => {
+                    const bytes = @ptrCast(*const [4]u8, &address.in.sa.addr);
+                    var ipv4 = network.Address{.ipv4 = network.Address.IPv4.init(bytes[0], bytes[1], bytes[2], bytes[3])};
+                    var port = address.getPort();
+                    var endpoint = network.EndPoint{.address = ipv4, .port = port};
+
+                    var socket = try Engine.Socket.create(.ipv4, .tcp);
+                    try socket.connect(endpoint);
+                    return socket;
+                },
+                else => unreachable,
+            }
+        }
+    };
+}
+
+const ZigNetwork = struct {
+    const Socket = network.Socket;
+
+    fn connectToHost(allocator: *Allocator, host: []const u8, port: u16, protocol: network.Protocol) !Socket {
+        return try network.connectToHost(allocator, host, port, protocol);
     }
 };
 
+const NetworkMock = struct {
+    const Socket = InMemorySocket;
 
-pub const SocketMock = struct {
-    allocator: *Allocator,
-    receive_buffer: LinearFifo(u8, .Dynamic),
-    write_buffer: std.ArrayList(u8),
+    pub fn connectToHost(allocator: *Allocator, host: []const u8, port: u16, protocol: network.Protocol) !Socket {
+        return try Socket.create(.{}, .{});
+    }
+};
 
-    const Self = @This();
-    const Reader = std.io.Reader(*Self, error{}, read);
+const InMemorySocket = struct {
 
-    pub fn connect(allocator: *Allocator, uri: Uri) !SocketMock {
-        return SocketMock {
-            .allocator = allocator,
-            .receive_buffer = LinearFifo(u8, .Dynamic).init(allocator),
-            .write_buffer = std.ArrayList(u8).init(allocator),
-        };
+    const Context = struct {
+        read_buffer: ReadBuffer,
+        write_buffer: WriteBuffer,
+
+        const ReadBuffer = LinearFifo(u8, .Dynamic);
+        const WriteBuffer = std.ArrayList(u8);
+
+        pub fn create() !*Context {
+            var context = try std.mem.Allocator.create(std.testing.allocator, Context);
+            context.read_buffer = ReadBuffer.init(std.testing.allocator);
+            context.write_buffer = WriteBuffer.init(std.testing.allocator);
+            return context;
+        }
+
+        pub fn deinit(self: *Context) void {
+            self.read_buffer.deinit();
+            self.write_buffer.deinit();
+        }
+    };
+
+    context: *Context,
+
+    pub const Reader = std.io.Reader(InMemorySocket, error{}, read);
+    pub const Writer = std.io.Writer(InMemorySocket, error{}, write);
+
+    pub fn create(address: anytype, protocol: anytype) !InMemorySocket {
+        return InMemorySocket { .context = try Context.create() };
     }
 
-    pub fn write(self: *SocketMock, buffer: []const u8) !void {
-        try self.write_buffer.appendSlice(buffer);
+    pub fn close(self: InMemorySocket) void {
+        self.context.deinit();
+        std.mem.Allocator.destroy(std.testing.allocator, self.context);
     }
 
-    pub fn close(self: *SocketMock) void {
-        self.receive_buffer.deinit();
-        self.write_buffer.deinit();
+    pub fn connect(self: InMemorySocket, options: anytype) !void {
+        return;
     }
 
-    pub fn receive(self: *SocketMock, data: []const u8) !void {
-        try self.receive_buffer.write(data);
+    pub fn have_sent(self: InMemorySocket, data: []const u8) bool {
+        return std.mem.eql(u8, self.context.write_buffer.items, data);
     }
 
-    pub fn have_sent(self: *SocketMock, data: []const u8) bool {
-        return std.mem.eql(u8, self.write_buffer.items, data);
+    pub fn receive(self: InMemorySocket, data: []const u8) !void {
+        try self.context.read_buffer.write(data);
     }
 
-    pub fn reader(self: *SocketMock) Reader {
-        return .{ .context = self };
+    pub fn reader(self: InMemorySocket) Reader {
+        return Reader{ .context = self };
     }
 
-    fn read(self: *SocketMock, dest: []u8) !usize {
-        return self.receive_buffer.read(dest);
+    pub fn read(self: InMemorySocket, dest: []u8) !usize {
+        return self.context.read_buffer.read(dest);
+    }
+
+    pub fn writer(self: InMemorySocket) Writer {
+        return Writer { .context = self };
+    }
+
+    pub fn write(self: InMemorySocket, bytes: []const u8) !usize {
+        self.context.write_buffer.appendSlice(bytes) catch unreachable;
+        return bytes.len;
     }
 };
