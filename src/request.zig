@@ -110,18 +110,19 @@ pub const Request = struct {
 
 
 const expect = std.testing.expect;
+const expectEqualStrings = std.testing.expectEqualStrings;
 
 test "Request" {
     const uri = try Uri.parse("http://ziglang.org/news/", false);
     var request = try Request.init(std.testing.allocator, .Get, uri, .{});
     defer request.deinit();
 
-    expect(request.method == .Get);
-    expect(request.version == .Http11);
-    expect(std.mem.eql(u8, request.headers.items()[0].name.raw(), "Host"));
-    expect(std.mem.eql(u8, request.headers.items()[0].value, "ziglang.org"));
-    expect(std.mem.eql(u8, request.path, "/news/"));
-    expect(request.body == .Empty);
+    try expect(request.method == .Get);
+    try expect(request.version == .Http11);
+    try expectEqualStrings(request.headers.items()[0].name.raw(), "Host");
+    try expectEqualStrings(request.headers.items()[0].value, "ziglang.org");
+    try expectEqualStrings(request.path, "/news/");
+    try expect(request.body == .Empty);
 }
 
 test "Request - Path defaults to /" {
@@ -129,7 +130,7 @@ test "Request - Path defaults to /" {
     var request = try Request.init(std.testing.allocator, .Get, uri, .{});
     defer request.deinit();
 
-    expect(std.mem.eql(u8, request.path, "/"));
+    try expectEqualStrings(request.path, "/");
 }
 
 test "Request - With user headers" {
@@ -142,10 +143,10 @@ test "Request - With user headers" {
     var request = try Request.init(std.testing.allocator, .Get, uri, .{ .headers = headers.items()});
     defer request.deinit();
 
-    expect(std.mem.eql(u8, request.headers.items()[0].name.raw(), "Host"));
-    expect(std.mem.eql(u8, request.headers.items()[0].value, "ziglang.org"));
-    expect(std.mem.eql(u8, request.headers.items()[1].name.raw(), "Gotta-go"));
-    expect(std.mem.eql(u8, request.headers.items()[1].value, "Fast!"));
+    try expectEqualStrings(request.headers.items()[0].name.raw(), "Host");
+    try expectEqualStrings(request.headers.items()[0].value, "ziglang.org");
+    try expectEqualStrings(request.headers.items()[1].name.raw(), "Gotta-go");
+    try expectEqualStrings(request.headers.items()[1].value, "Fast!");
 }
 
 test "Request - With compile time user headers" {
@@ -157,10 +158,10 @@ test "Request - With compile time user headers" {
     var request = try Request.init(std.testing.allocator, .Get, uri, .{ .headers = headers});
     defer request.deinit();
 
-    expect(std.mem.eql(u8, request.headers.items()[0].name.raw(), "Host"));
-    expect(std.mem.eql(u8, request.headers.items()[0].value, "ziglang.org"));
-    expect(std.mem.eql(u8, request.headers.items()[1].name.raw(), "Gotta-go"));
-    expect(std.mem.eql(u8, request.headers.items()[1].value, "Fast!"));
+    try expectEqualStrings(request.headers.items()[0].name.raw(), "Host");
+    try expectEqualStrings(request.headers.items()[0].value, "ziglang.org");
+    try expectEqualStrings(request.headers.items()[1].name.raw(), "Gotta-go");
+    try expectEqualStrings(request.headers.items()[1].value, "Fast!");
 }
 
 test "Request - With IP address" {
@@ -168,9 +169,9 @@ test "Request - With IP address" {
     var request = try Request.init(std.testing.allocator, .Get, uri, .{});
     defer request.deinit();
 
-    expect(std.mem.eql(u8, request.ip.?, "127.0.0.1:8080"));
-    expect(std.mem.eql(u8, request.headers.items()[0].name.raw(), "Host"));
-    expect(std.mem.eql(u8, request.headers.items()[0].value, "127.0.0.1:8080"));
+    try expectEqualStrings(request.ip.?, "127.0.0.1:8080");
+    try expectEqualStrings(request.headers.items()[0].name.raw(), "Host");
+    try expectEqualStrings(request.headers.items()[0].value, "127.0.0.1:8080");
 }
 
 test "Request - With content" {
@@ -178,17 +179,11 @@ test "Request - With content" {
     var request = try Request.init(std.testing.allocator, .Get, uri, .{ .content = "Gotta go fast!"});
     defer request.deinit();
 
-    expect(request.body == .ContentLength);
-    expect(std.mem.eql(u8, request.headers.items()[0].name.raw(), "Host"));
-    expect(std.mem.eql(u8, request.headers.items()[0].value, "ziglang.org"));
-    expect(std.mem.eql(u8, request.headers.items()[1].name.raw(), "Content-Length"));
-    expect(std.mem.eql(u8, request.headers.items()[1].value, "14"));
-
-    switch (request.body) {
-        .ContentLength => |body| {
-            expect(std.mem.eql(u8, body.length, "14"));
-            expect(std.mem.eql(u8, body.content, "Gotta go fast!"));
-        },
-        .Empty => unreachable,
-    }
+    try expect(request.body == .ContentLength);
+    try expectEqualStrings(request.headers.items()[0].name.raw(), "Host");
+    try expectEqualStrings(request.headers.items()[0].value, "ziglang.org");
+    try expectEqualStrings(request.headers.items()[1].name.raw(), "Content-Length");
+    try expectEqualStrings(request.headers.items()[1].value, "14");
+    try expectEqualStrings(request.body.ContentLength.length, "14");
+    try expectEqualStrings(request.body.ContentLength.content, "Gotta go fast!");
 }
