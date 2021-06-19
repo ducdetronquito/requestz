@@ -117,6 +117,7 @@ pub fn Connection(comptime SocketType: type) type {
 
 const ConnectionMock = Connection(SocketMock);
 const expect = std.testing.expect;
+const expectEqualStrings = std.testing.expectEqualStrings;
 const Headers = @import("http").Headers;
 const SocketMock = @import("socket.zig").SocketMock;
 
@@ -133,15 +134,15 @@ test "Get" {
     var response = try connection.request(.Get, uri, .{});
     defer response.deinit();
 
-    expect(response.status == .Ok);
-    expect(response.version == .Http11);
+    try expect(response.status == .Ok);
+    try expect(response.version == .Http11);
 
     var headers = response.headers.items();
 
-    expect(std.mem.eql(u8, headers[0].name.raw(), "Content-Length"));
-    expect(std.mem.eql(u8, headers[1].name.raw(), "Server"));
+    try expectEqualStrings(headers[0].name.raw(), "Content-Length");
+    try expectEqualStrings(headers[1].name.raw(), "Server");
 
-    expect(response.body.len == 14);
+    try expect(response.body.len == 14);
 }
 
 test "Get with headers" {
@@ -161,7 +162,7 @@ test "Get with headers" {
     var response = try connection.request(.Get, uri, .{ .headers = headers.items()});
     defer response.deinit();
 
-    expect(connection.socket.target.have_sent("GET /get HTTP/1.1\r\nHost: httpbin.org\r\nGotta-go: Fast!\r\n\r\n"));
+    try expect(connection.socket.target.have_sent("GET /get HTTP/1.1\r\nHost: httpbin.org\r\nGotta-go: Fast!\r\n\r\n"));
 }
 
 test "Get with compile-time headers" {
@@ -181,7 +182,7 @@ test "Get with compile-time headers" {
     var response = try connection.request(.Get, uri, .{ .headers = headers});
     defer response.deinit();
 
-    expect(connection.socket.target.have_sent("GET /get HTTP/1.1\r\nHost: httpbin.org\r\nGotta-go: Fast!\r\n\r\n"));
+    try expect(connection.socket.target.have_sent("GET /get HTTP/1.1\r\nHost: httpbin.org\r\nGotta-go: Fast!\r\n\r\n"));
 }
 
 test "Post binary data" {
@@ -197,7 +198,7 @@ test "Post binary data" {
     var response = try connection.request(.Post, uri, .{ .content = "Gotta go fast!"});
     defer response.deinit();
 
-    expect(connection.socket.target.have_sent("POST /post HTTP/1.1\r\nHost: httpbin.org\r\nContent-Length: 14\r\n\r\nGotta go fast!"));
+    try expect(connection.socket.target.have_sent("POST /post HTTP/1.1\r\nHost: httpbin.org\r\nContent-Length: 14\r\n\r\nGotta go fast!"));
 }
 
 test "Head request has no message body" {
@@ -210,7 +211,7 @@ test "Head request has no message body" {
     var response = try connection.request(.Head, uri, .{});
     defer response.deinit();
 
-    expect(response.body.len == 0);
+    try expect(response.body.len == 0);
 }
 
 test "IP address and a port should be set in HOST headers" {
@@ -224,7 +225,7 @@ test "IP address and a port should be set in HOST headers" {
     var response = try connection.request(.Get, uri, .{});
     defer response.deinit();
 
-    expect(connection.socket.target.have_sent("GET / HTTP/1.1\r\nHost: 127.0.0.1:8080\r\n\r\n"));
+    try expect(connection.socket.target.have_sent("GET / HTTP/1.1\r\nHost: 127.0.0.1:8080\r\n\r\n"));
 }
 
 test "Request a URI without path defaults to /" {
@@ -238,7 +239,7 @@ test "Request a URI without path defaults to /" {
     var response = try connection.request(.Get, uri, .{});
     defer response.deinit();
 
-    expect(connection.socket.target.have_sent("GET / HTTP/1.1\r\nHost: httpbin.org\r\n\r\n"));
+    try expect(connection.socket.target.have_sent("GET / HTTP/1.1\r\nHost: httpbin.org\r\n\r\n"));
 }
 
 test "Get a response in multiple socket read" {
@@ -253,15 +254,15 @@ test "Get a response in multiple socket read" {
     var response = try connection.request(.Get, uri, .{});
     defer response.deinit();
 
-    expect(response.status == .Ok);
-    expect(response.version == .Http11);
+    try expect(response.status == .Ok);
+    try expect(response.version == .Http11);
 
     var headers = response.headers.items();
 
-    expect(std.mem.eql(u8, headers[0].name.raw(), "Content-Length"));
-    expect(std.mem.eql(u8, headers[0].value, "14"));
+    try expectEqualStrings(headers[0].name.raw(), "Content-Length");
+    try expectEqualStrings(headers[0].value, "14");
 
-    expect(response.body.len == 14);
+    try expect(response.body.len == 14);
 }
 
 test "Get a streaming response" {
@@ -277,12 +278,12 @@ test "Get a streaming response" {
     var response = try connection.stream(.Get, uri, .{});
     defer response.deinit();
 
-    expect(response.status == .Ok);
-    expect(response.version == .Http11);
+    try expect(response.status == .Ok);
+    try expect(response.version == .Http11);
 
     var headers = response.headers.items();
-    expect(std.mem.eql(u8, headers[0].name.raw(), "Content-Length"));
-    expect(std.mem.eql(u8, headers[0].value, "12288"));
+    try expectEqualStrings(headers[0].name.raw(), "Content-Length");
+    try expectEqualStrings(headers[0].value, "12288");
 
     var result = std.ArrayList(u8).init(std.testing.allocator);
     defer result.deinit();
@@ -296,7 +297,7 @@ test "Get a streaming response" {
         try result.appendSlice(buffer[0..bytesRead]);
     }
 
-    expect(std.mem.eql(u8, result.items, body));
+    try expectEqualStrings(result.items, body);
 }
 
 test "Get a chunk encoded response" {
@@ -316,13 +317,13 @@ test "Get a chunk encoded response" {
     var response = try connection.request(.Get, uri, .{});
     defer response.deinit();
 
-    expect(response.status == .Ok);
-    expect(response.version == .Http11);
+    try expect(response.status == .Ok);
+    try expect(response.version == .Http11);
 
     var headers = response.headers.items();
 
-    expect(std.mem.eql(u8, headers[0].name.raw(), "Transfer-Encoding"));
-    expect(std.mem.eql(u8, headers[0].value, "chunked"));
+    try expectEqualStrings(headers[0].name.raw(), "Transfer-Encoding");
+    try expectEqualStrings(headers[0].value, "chunked");
 
-    expect(std.mem.eql(u8, response.body, "MozillaDeveloperNetwork"));
+    try expectEqualStrings(response.body, "MozillaDeveloperNetwork");
 }
