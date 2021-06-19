@@ -45,6 +45,7 @@ pub fn Connection(comptime SocketType: type) type {
             try self.sendRequest(_request);
 
             var response = try self.readResponse();
+            errdefer response.deinit();
             var body = try self.readResponseBody();
 
             return Response {
