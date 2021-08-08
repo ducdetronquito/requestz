@@ -81,6 +81,7 @@ To work with *requestz* you will need the latest stable version of Zig, which is
 
 - [h11](https://github.com/ducdetronquito/h11)
 - [http](https://github.com/ducdetronquito/http)
+- [iguanaTLS](https://github.com/alexnask/iguanaTLS)
 - [zig-network](https://github.com/MasterQ32/zig-network)
 
 ## License

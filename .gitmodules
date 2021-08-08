@@ -4,3 +4,6 @@
 [submodule "lib/zig-network"]
 	path = lib/zig-network
 	url = https://github.com/MasterQ32/zig-network/
+[submodule "lib/iguanaTLS"]
+	path = lib/iguanaTLS
+	url = https://github.com/alexnask/iguanaTLS
