@@ -6,6 +6,11 @@ pub const network = std.build.Pkg {
     .dependencies = null,
 };
 
+pub const iguanaTLS = std.build.Pkg {
+    .name = "iguanaTLS",
+    .path = "lib/iguanaTLS/src/main.zig",
+    .dependencies = null,
+};
 
 pub const http = std.build.Pkg {
     .name = "http",
