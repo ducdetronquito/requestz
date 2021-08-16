@@ -73,7 +73,7 @@ pub const Client = struct {
         return self.request(.Trace, url, args);
     }
 
-    fn get_connection(self: Client, uri: Uri) !TcpConnection {
+    fn get_connection(self: Client, uri: Uri) !*TcpConnection {
         return try TcpConnection.connect(self.allocator, uri);
     }
 };
