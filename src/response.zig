@@ -8,7 +8,6 @@ const Version = @import("http").Version;
 const ValueTree = std.json.ValueTree;
 const Connection = @import("connection.zig").Connection;
 
-
 pub const Response = struct {
     allocator: *Allocator,
     buffer: []const u8,
@@ -31,7 +30,6 @@ pub const Response = struct {
     }
 };
 
-
 pub fn StreamingResponse(comptime ConnectionType: type) type {
     return struct {
         const Self = @This();
@@ -50,7 +48,7 @@ pub fn StreamingResponse(comptime ConnectionType: type) type {
 
         pub fn read(self: *Self, buffer: []u8) !usize {
             var event = try self.connection.nextEvent(.{ .buffer = buffer });
-            switch(event) {
+            switch (event) {
                 .Data => |data| return data.bytes.len,
                 .EndOfMessage => return 0,
                 else => unreachable,

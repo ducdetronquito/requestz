@@ -6,17 +6,13 @@ const std = @import("std");
 const Uri = @import("http").Uri;
 const Version = @import("http").Version;
 
-
 const BodyType = enum {
     ContentLength,
     Empty,
 };
 
 const Body = union(BodyType) {
-    ContentLength: struct {
-        length: []const u8,
-        content: []const u8
-    },
+    ContentLength: struct { length: []const u8, content: []const u8 },
     Empty: void,
 };
 
@@ -36,17 +32,17 @@ pub const Request = struct {
         }
         self.headers.deinit();
 
-        switch(self.body) {
+        switch (self.body) {
             .ContentLength => |*body| {
                 self.allocator.free(body.length);
             },
-            else => {}
+            else => {},
         }
     }
 
     pub fn init(allocator: *Allocator, method: Method, uri: Uri, options: anytype) !Request {
         var path = if (uri.path.len != 0) uri.path else "/";
-        var request = Request {
+        var request = Request{
             .allocator = allocator,
             .body = Body.Empty,
             .headers = Headers.init(allocator),
@@ -57,14 +53,14 @@ pub const Request = struct {
             .version = Version.Http11,
         };
 
-        switch(request.uri.host) {
-            .ip => |address|{
+        switch (request.uri.host) {
+            .ip => |address| {
                 request.ip = try std.fmt.allocPrint(allocator, "{}", .{address});
                 try request.headers.append("Host", request.ip.?);
             },
             .name => |name| {
                 try request.headers.append("Host", name);
-            }
+            },
         }
 
         if (@hasField(@TypeOf(options), "headers")) {
@@ -79,12 +75,10 @@ pub const Request = struct {
         if (@hasField(@TypeOf(options), "content")) {
             var content_length = std.fmt.allocPrint(allocator, "{d}", .{options.content.len}) catch unreachable;
             try request.headers.append("Content-Length", content_length);
-            request.body = Body {
-                .ContentLength = .{
-                    .length = content_length,
-                    .content = options.content,
-                }
-            };
+            request.body = Body{ .ContentLength = .{
+                .length = content_length,
+                .content = options.content,
+            } };
         }
 
         return request;
@@ -94,16 +88,15 @@ pub const Request = struct {
         const typeof = @TypeOf(user_headers);
         const typeinfo = @typeInfo(typeof);
 
-        return switch(typeinfo) {
+        return switch (typeinfo) {
             .Struct => Header.as_slice(user_headers),
             .Pointer => user_headers,
             else => {
                 @compileError("Invalid headers type: You must provide either a http.Headers or an anonymous struct literal.");
-            }
+            },
         };
     }
 };
-
 
 const expect = std.testing.expect;
 const expectEqualStrings = std.testing.expectEqualStrings;
@@ -136,7 +129,7 @@ test "Request - With user headers" {
     defer headers.deinit();
     try headers.append("Gotta-go", "Fast!");
 
-    var request = try Request.init(std.testing.allocator, .Get, uri, .{ .headers = headers.items()});
+    var request = try Request.init(std.testing.allocator, .Get, uri, .{ .headers = headers.items() });
     defer request.deinit();
 
     try expectEqualStrings(request.headers.items()[0].name.raw(), "Host");
@@ -148,10 +141,8 @@ test "Request - With user headers" {
 test "Request - With compile time user headers" {
     const uri = try Uri.parse("http://ziglang.org/news/", false);
 
-    var headers = .{
-        .{"Gotta-go", "Fast!"}
-    };
-    var request = try Request.init(std.testing.allocator, .Get, uri, .{ .headers = headers});
+    var headers = .{.{ "Gotta-go", "Fast!" }};
+    var request = try Request.init(std.testing.allocator, .Get, uri, .{ .headers = headers });
     defer request.deinit();
 
     try expectEqualStrings(request.headers.items()[0].name.raw(), "Host");
@@ -172,7 +163,7 @@ test "Request - With IP address" {
 
 test "Request - With content" {
     const uri = try Uri.parse("http://ziglang.org/news/", false);
-    var request = try Request.init(std.testing.allocator, .Get, uri, .{ .content = "Gotta go fast!"});
+    var request = try Request.init(std.testing.allocator, .Get, uri, .{ .content = "Gotta go fast!" });
     defer request.deinit();
 
     try expect(request.body == .ContentLength);

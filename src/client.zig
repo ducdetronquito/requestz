@@ -7,13 +7,12 @@ const std = @import("std");
 const StreamingResponse = @import("response.zig").StreamingResponse;
 const Uri = @import("http").Uri;
 
-
 pub const Client = struct {
     allocator: *Allocator,
 
     pub fn init(allocator: *Allocator) !Client {
         try network.init();
-        return Client { .allocator = allocator };
+        return Client{ .allocator = allocator };
     }
 
     pub fn deinit(_: *Client) void {
