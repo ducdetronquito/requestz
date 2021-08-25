@@ -1,1 +1,2 @@
-text eol=lf
+*.zig text eol=lf
+*.zzz text eol=lf

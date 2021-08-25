@@ -1,0 +1,24 @@
+pkgs:
+  requestz:
+    version: 0.1.0
+    root: src/main.zig
+    description: HTTP client for Zig 🦎
+    license: 0BSD
+    source_url: "https://github.com/ducdetronquito/requestz"
+    tags: http
+deps:
+  ducdetronquito/http: ^0.1.3
+  ducdetronquito/h11: ^0.1.1
+  iguanaTLS:
+    src:
+      github:
+        user: alexnask
+        repo: iguanaTLS
+        ref: 0d39a361639ad5469f8e4dcdaea35446bbe54b48
+  network:
+    root: network.zig
+    src:
+      github:
+        user: MasterQ32
+        repo: zig-network
+        ref: b9c91769d8ebd626c8e45b2abb05cbc28ccc50da
