@@ -9,13 +9,9 @@ const StreamingResponse = @import("response.zig").StreamingResponse;
 const tls = @import("iguanaTLS");
 const Uri = @import("http").Uri;
 
-
 pub const TcpConnection = Connection(TcpSocket);
 
-pub const Protocol = enum {
-    Http,
-    Https
-};
+pub const Protocol = enum { Http, Https };
 
 pub fn Connection(comptime SocketType: type) type {
     return struct {
@@ -42,17 +38,14 @@ pub fn Connection(comptime SocketType: type) type {
 
             if (std.mem.eql(u8, uri.scheme, "https")) {
                 connection.protocol = .Https;
-                connection.tls_context = try tls.client_connect(
-                    .{
-                        .reader = connection.socket.reader(),
-                        .writer = connection.socket.writer(),
-                        .cert_verifier = .none,
-                        .temp_allocator = allocator,
-                        .ciphersuites = tls.ciphersuites.all,
-                        .protocols = &[_][]const u8{"http/1.1"},
-                    },
-                    uri.host.name
-                );
+                connection.tls_context = try tls.client_connect(.{
+                    .reader = connection.socket.reader(),
+                    .writer = connection.socket.writer(),
+                    .cert_verifier = .none,
+                    .temp_allocator = allocator,
+                    .ciphersuites = tls.ciphersuites.all,
+                    .protocols = &[_][]const u8{"http/1.1"},
+                }, uri.host.name);
             }
 
             return connection;
@@ -76,14 +69,14 @@ pub fn Connection(comptime SocketType: type) type {
         }
 
         pub fn read(self: *Self, buffer: []u8) ReaderError!usize {
-            return switch(self.protocol) {
+            return switch (self.protocol) {
                 .Http => self.socket.read(buffer),
                 .Https => self.tls_context.read(buffer),
             };
         }
 
         pub fn write(self: *Self, buffer: []const u8) WriterError!usize {
-            return switch(self.protocol) {
+            return switch (self.protocol) {
                 .Http => self.socket.write(buffer),
                 .Https => self.tls_context.write(buffer),
             };
@@ -99,7 +92,7 @@ pub fn Connection(comptime SocketType: type) type {
             errdefer response.deinit();
             var body = try self.readResponseBody();
 
-            return Response {
+            return Response{
                 .allocator = self.allocator,
                 .buffer = response.raw_bytes,
                 .status = response.statusCode,
@@ -117,7 +110,7 @@ pub fn Connection(comptime SocketType: type) type {
 
             var response = try self.readResponse();
 
-            return StreamingResponse(Self) {
+            return StreamingResponse(Self){
                 .allocator = self.allocator,
                 .buffer = response.raw_bytes,
                 .connection = self,
@@ -130,13 +123,13 @@ pub fn Connection(comptime SocketType: type) type {
         fn sendRequest(self: *Self, _request: Request) !void {
             var request_event = try h11.Request.init(_request.method, _request.path, _request.version, _request.headers);
 
-            try self.state.send(h11.Event {.Request = request_event });
+            try self.state.send(h11.Event{ .Request = request_event });
 
-            switch(_request.body) {
+            switch (_request.body) {
                 .Empty => return,
                 .ContentLength => |body| {
                     try self.state.send(.{ .Data = h11.Data{ .bytes = body.content } });
-                }
+                },
             }
         }
 
@@ -152,7 +145,7 @@ pub fn Connection(comptime SocketType: type) type {
             while (true) {
                 var buffer: [4096]u8 = undefined;
                 var event = try self.state.nextEvent(.{ .buffer = &buffer });
-                switch(event) {
+                switch (event) {
                     .Data => |data| try body.appendSlice(data.bytes),
                     .EndOfMessage => return body.toOwnedSlice(),
                     else => unreachable,
@@ -166,7 +159,6 @@ pub fn Connection(comptime SocketType: type) type {
     };
 }
 
-
 const ConnectionMock = Connection(SocketMock);
 const expect = std.testing.expect;
 const expectEqualStrings = std.testing.expectEqualStrings;
@@ -178,10 +170,7 @@ test "Get" {
     var connection = try ConnectionMock.connect(std.testing.allocator, uri);
     defer connection.deinit();
 
-    try connection.socket.target.has_received(
-        "HTTP/1.1 200 OK\r\nContent-Length: 14\r\nServer: gunicorn/19.9.0\r\n\r\n"
-        ++ "Gotta Go Fast!"
-    );
+    try connection.socket.target.has_received("HTTP/1.1 200 OK\r\nContent-Length: 14\r\nServer: gunicorn/19.9.0\r\n\r\n" ++ "Gotta Go Fast!");
 
     var response = try connection.request(.Get, uri, .{});
     defer response.deinit();
@@ -202,16 +191,13 @@ test "Get with headers" {
 
     var connection = try ConnectionMock.connect(std.testing.allocator, uri);
     defer connection.deinit();
-    try connection.socket.target.has_received(
-        "HTTP/1.1 200 OK\r\nContent-Length: 14\r\nServer: gunicorn/19.9.0\r\n\r\n"
-        ++ "Gotta Go Fast!"
-    );
+    try connection.socket.target.has_received("HTTP/1.1 200 OK\r\nContent-Length: 14\r\nServer: gunicorn/19.9.0\r\n\r\n" ++ "Gotta Go Fast!");
 
     var headers = Headers.init(std.testing.allocator);
     defer headers.deinit();
     try headers.append("Gotta-go", "Fast!");
 
-    var response = try connection.request(.Get, uri, .{ .headers = headers.items()});
+    var response = try connection.request(.Get, uri, .{ .headers = headers.items() });
     defer response.deinit();
 
     try expect(connection.socket.target.has_sent("GET /get HTTP/1.1\r\nHost: httpbin.org\r\nGotta-go: Fast!\r\n\r\n"));
@@ -222,16 +208,11 @@ test "Get with compile-time headers" {
 
     var connection = try ConnectionMock.connect(std.testing.allocator, uri);
     defer connection.deinit();
-    try connection.socket.target.has_received(
-        "HTTP/1.1 200 OK\r\nContent-Length: 14\r\nServer: gunicorn/19.9.0\r\n\r\n"
-        ++ "Gotta Go Fast!"
-    );
+    try connection.socket.target.has_received("HTTP/1.1 200 OK\r\nContent-Length: 14\r\nServer: gunicorn/19.9.0\r\n\r\n" ++ "Gotta Go Fast!");
 
-    var headers = .{
-        .{"Gotta-go", "Fast!"}
-    };
+    var headers = .{.{ "Gotta-go", "Fast!" }};
 
-    var response = try connection.request(.Get, uri, .{ .headers = headers});
+    var response = try connection.request(.Get, uri, .{ .headers = headers });
     defer response.deinit();
 
     try expect(connection.socket.target.has_sent("GET /get HTTP/1.1\r\nHost: httpbin.org\r\nGotta-go: Fast!\r\n\r\n"));
@@ -242,12 +223,9 @@ test "Post binary data" {
 
     var connection = try ConnectionMock.connect(std.testing.allocator, uri);
     defer connection.deinit();
-    try connection.socket.target.has_received(
-        "HTTP/1.1 200 OK\r\nContent-Length: 14\r\nServer: gunicorn/19.9.0\r\n\r\n"
-        ++ "Gotta Go Fast!"
-    );
+    try connection.socket.target.has_received("HTTP/1.1 200 OK\r\nContent-Length: 14\r\nServer: gunicorn/19.9.0\r\n\r\n" ++ "Gotta Go Fast!");
 
-    var response = try connection.request(.Post, uri, .{ .content = "Gotta go fast!"});
+    var response = try connection.request(.Post, uri, .{ .content = "Gotta go fast!" });
     defer response.deinit();
 
     try expect(connection.socket.target.has_sent("POST /post HTTP/1.1\r\nHost: httpbin.org\r\nContent-Length: 14\r\n\r\nGotta go fast!"));
@@ -340,7 +318,7 @@ test "Get a streaming response" {
     var result = std.ArrayList(u8).init(std.testing.allocator);
     defer result.deinit();
 
-    while(true) {
+    while (true) {
         var buffer: [4096]u8 = undefined;
         var bytesRead = try response.read(&buffer);
         if (bytesRead == 0) {
@@ -357,14 +335,7 @@ test "Get a chunk encoded response" {
     var connection = try ConnectionMock.connect(std.testing.allocator, uri);
     defer connection.deinit();
 
-    try connection.socket.target.has_received(
-        "HTTP/1.1 200 OK\r\n"
-        ++ "Transfer-Encoding: chunked\r\n\r\n"
-        ++ "7\r\nMozilla\r\n"
-        ++ "9\r\nDeveloper\r\n"
-        ++ "7\r\nNetwork\r\n"
-        ++ "0\r\n\r\n"
-    );
+    try connection.socket.target.has_received("HTTP/1.1 200 OK\r\n" ++ "Transfer-Encoding: chunked\r\n\r\n" ++ "7\r\nMozilla\r\n" ++ "9\r\nDeveloper\r\n" ++ "7\r\nNetwork\r\n" ++ "0\r\n\r\n");
 
     var response = try connection.request(.Get, uri, .{});
     defer response.deinit();

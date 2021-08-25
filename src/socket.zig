@@ -6,13 +6,10 @@ const std = @import("std");
 const tls = @import("iguanaTLS");
 const Uri = @import("http").Uri;
 
-
 pub const TcpSocket = SocketWrapper(ZigNetwork);
 pub const SocketMock = SocketWrapper(NetworkMock);
 
-
 fn SocketWrapper(comptime Engine: type) type {
-
     return struct {
         target: Engine.Socket,
         tls_context: TlsContext = undefined,
@@ -25,12 +22,12 @@ fn SocketWrapper(comptime Engine: type) type {
         pub fn connect(allocator: *Allocator, uri: Uri) !Self {
             var defaultPort: u16 = if (std.mem.eql(u8, uri.scheme, "https")) 443 else 80;
             var port: u16 = uri.port orelse defaultPort;
-            var socket = switch(uri.host) {
+            var socket = switch (uri.host) {
                 .name => |host| try Self.connectToHost(allocator, host, port),
                 .ip => |address| try Self.connectToAddress(allocator, address),
             };
 
-            return Self { .target = socket };
+            return Self{ .target = socket };
         }
 
         pub fn close(self: *Self) void {
@@ -58,12 +55,12 @@ fn SocketWrapper(comptime Engine: type) type {
         }
 
         fn connectToAddress(_: *Allocator, address: Address) !Engine.Socket {
-            switch(address.any.family) {
+            switch (address.any.family) {
                 std.os.AF_INET => {
                     const bytes = @ptrCast(*const [4]u8, &address.in.sa.addr);
-                    var ipv4 = network.Address{.ipv4 = network.Address.IPv4.init(bytes[0], bytes[1], bytes[2], bytes[3])};
+                    var ipv4 = network.Address{ .ipv4 = network.Address.IPv4.init(bytes[0], bytes[1], bytes[2], bytes[3]) };
                     var port = address.getPort();
-                    var endpoint = network.EndPoint{.address = ipv4, .port = port};
+                    var endpoint = network.EndPoint{ .address = ipv4, .port = port };
 
                     var socket = try Engine.Socket.create(.ipv4, .tcp);
                     try socket.connect(endpoint);
@@ -96,7 +93,6 @@ const NetworkMock = struct {
 };
 
 const InMemorySocket = struct {
-
     const Context = struct {
         read_buffer: ReadBuffer,
         write_buffer: WriteBuffer,
@@ -127,7 +123,7 @@ const InMemorySocket = struct {
     pub fn create(address: anytype, protocol: anytype) !InMemorySocket {
         _ = address;
         _ = protocol;
-        return InMemorySocket { .context = try Context.create() };
+        return InMemorySocket{ .context = try Context.create() };
     }
 
     pub fn close(self: InMemorySocket) void {
