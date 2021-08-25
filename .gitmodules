@@ -1,9 +1,0 @@
-[submodule "lib/h11"]
-	path = lib/h11
-	url = https://github.com/ducdetronquito/h11
-[submodule "lib/zig-network"]
-	path = lib/zig-network
-	url = https://github.com/MasterQ32/zig-network/
-[submodule "lib/iguanaTLS"]
-	path = lib/iguanaTLS
-	url = https://github.com/alexnask/iguanaTLS
