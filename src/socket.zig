@@ -57,7 +57,7 @@ fn SocketWrapper(comptime Engine: type) type {
             return try Engine.connectToHost(allocator, host, port, .tcp);
         }
 
-        fn connectToAddress(allocator: *Allocator, address: Address) !Engine.Socket {
+        fn connectToAddress(_: *Allocator, address: Address) !Engine.Socket {
             switch(address.any.family) {
                 std.os.AF_INET => {
                     const bytes = @ptrCast(*const [4]u8, &address.in.sa.addr);
@@ -87,6 +87,10 @@ const NetworkMock = struct {
     const Socket = InMemorySocket;
 
     pub fn connectToHost(allocator: *Allocator, host: []const u8, port: u16, protocol: network.Protocol) !Socket {
+        _ = allocator;
+        _ = host;
+        _ = port;
+        _ = protocol;
         return try Socket.create(.{}, .{});
     }
 };
@@ -121,6 +125,8 @@ const InMemorySocket = struct {
     pub const SendError = anyerror;
 
     pub fn create(address: anytype, protocol: anytype) !InMemorySocket {
+        _ = address;
+        _ = protocol;
         return InMemorySocket { .context = try Context.create() };
     }
 
@@ -130,7 +136,8 @@ const InMemorySocket = struct {
     }
 
     pub fn connect(self: InMemorySocket, options: anytype) !void {
-        return;
+        _ = self;
+        _ = options;
     }
 
     pub fn has_sent(self: InMemorySocket, data: []const u8) bool {

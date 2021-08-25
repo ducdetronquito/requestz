@@ -94,17 +94,13 @@ pub const Request = struct {
         const typeof = @TypeOf(user_headers);
         const typeinfo = @typeInfo(typeof);
 
-        switch(typeinfo) {
-            .Struct => |obj| {
-                return Header.as_slice(user_headers);
-            },
-            .Pointer => |ptr| {
-                return user_headers;
-            },
+        return switch(typeinfo) {
+            .Struct => Header.as_slice(user_headers),
+            .Pointer => user_headers,
             else => {
                 @compileError("Invalid headers type: You must provide either a http.Headers or an anonymous struct literal.");
             }
-        }
+        };
     }
 };
 

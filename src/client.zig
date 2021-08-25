@@ -16,7 +16,7 @@ pub const Client = struct {
         return Client { .allocator = allocator };
     }
 
-    pub fn deinit(self: *Client) void {
+    pub fn deinit(_: *Client) void {
         network.deinit();
     }
 
