@@ -17,7 +17,7 @@ gyro add ducdetronquito/requestz
 
 Send a GET request
 ```zig
-const http = @import("requestz.zig").Client;
+const http = @import("requestz").Client;
 
 var client = try http.init(std.testing.allocator);
 defer client.deinit();
