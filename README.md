@@ -17,9 +17,9 @@ gyro add ducdetronquito/requestz
 
 Send a GET request
 ```zig
-const client = @import("requestz.zig").Client;
+const http = @import("requestz.zig").Client;
 
-var client = try Client.init(std.testing.allocator);
+var client = try http.init(std.testing.allocator);
 defer client.deinit();
 
 var response = try client.get("http://httpbin.org/get", .{});
@@ -68,11 +68,12 @@ while(true) {
     if (bytesRead == 0) {
         break;
     }
-    std.debug.print("{}", .{buffer[0..bytesRead]});
+    std.debug.print("{s}", .{buffer[0..bytesRead]});
 }
 ```
 
 Other standard HTTP method shortcuts:
+
 - `client.connect`
 - `client.delete`
 - `client.head`
