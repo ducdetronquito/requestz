@@ -56,7 +56,7 @@ fn SocketWrapper(comptime Engine: type) type {
 
         fn connectToAddress(_: *Allocator, address: Address) !Engine.Socket {
             switch (address.any.family) {
-                std.os.AF_INET => {
+                std.os.AF.INET => {
                     const bytes = @ptrCast(*const [4]u8, &address.in.sa.addr);
                     var ipv4 = network.Address{ .ipv4 = network.Address.IPv4.init(bytes[0], bytes[1], bytes[2], bytes[3]) };
                     var port = address.getPort();
