@@ -16,13 +16,13 @@ deps:
   iguanaTLS:
     src:
       github:
-        user: alexnask
+        user: nektro
         repo: iguanaTLS
-        ref: 0d39a361639ad5469f8e4dcdaea35446bbe54b48
+        ref: 953ad821fae6c920fb82399493663668cd91bde7
   network:
     root: network.zig
     src:
       github:
         user: MasterQ32
         repo: zig-network
-        ref: b9c91769d8ebd626c8e45b2abb05cbc28ccc50da
+        ref: 15b88658809cac9022ec7d59449b0cd3ebfd0361
