@@ -1,6 +1,8 @@
 const Allocator = std.mem.Allocator;
+const ArenaAllocator = std.heap.ArenaAllocator;
 const h11 = @import("h11");
 const Headers = @import("http").Headers;
+const Header = @import("http").Header;
 const JsonParser = std.json.Parser;
 const StatusCode = @import("http").StatusCode;
 const std = @import("std");
@@ -9,21 +11,18 @@ const ValueTree = std.json.ValueTree;
 const Connection = @import("connection.zig").Connection;
 
 pub const Response = struct {
-    allocator: *Allocator,
-    buffer: []const u8,
+    arena: ArenaAllocator,
     status: StatusCode,
     version: Version,
-    headers: Headers,
-    body: []const u8,
+    headers: []Header,
+    body: []u8,
 
     pub fn deinit(self: *Response) void {
-        self.headers.deinit();
-        self.allocator.free(self.buffer);
-        self.allocator.free(self.body);
+        self.arena.deinit();
     }
 
     pub fn json(self: Response) !ValueTree {
-        var parser = JsonParser.init(self.allocator, false);
+        var parser = JsonParser.init(self.arena.allocator(), false);
         defer parser.deinit();
 
         return try parser.parse(self.body);
@@ -33,7 +32,7 @@ pub const Response = struct {
 pub fn StreamingResponse(comptime ConnectionType: type) type {
     return struct {
         const Self = @This();
-        allocator: *Allocator,
+        allocator: Allocator,
         buffer: []const u8,
         connection: *ConnectionType,
         headers: Headers,

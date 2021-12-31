@@ -6,3 +6,5 @@ deps.zig
 .gyro
 gyro.lock
 zig-out/
+.zigmod
+deps.zig
