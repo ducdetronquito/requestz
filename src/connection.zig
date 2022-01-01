@@ -9,7 +9,7 @@ const TcpSocket = @import("socket.zig").TcpSocket;
 const Request = @import("request.zig").Request;
 const Response = @import("response.zig").Response;
 const std = @import("std");
-const StreamingResponse = @import("response.zig").StreamingResponse;
+const ResponseStream = @import("response.zig").ResponseStream;
 const tls = @import("iguanaTLS");
 const Uri = http.Uri;
 
@@ -87,64 +87,47 @@ pub fn Connection(comptime SocketType: type) type {
         }
 
         pub fn request(self: *Self, method: Method, uri: Uri, options: anytype) !Response {
-            var _request = try Request.init(self.allocator, method, uri, options);
-            try self.sendRequest(_request);
-            _request.deinit();
+            var _stream = try self.stream(method, uri, options);
+            errdefer _stream.deinit();
 
-            var response = try self.readResponse();
-            errdefer response.deinit();
-
-            var body = std.ArrayList(u8).init(response.arena.allocator());
-
+            var body = std.ArrayList(u8).init(_stream.arena.allocator());
             while (true) {
                 var buffer: [4096]u8 = undefined;
-                var event = try self.state.nextEvent(&buffer);
-                switch (event) {
-                    .Data => |data| try body.appendSlice(data.bytes),
-                    .EndOfMessage => {
-                        response.body = body.toOwnedSlice();
-                        break;
-                    },
-                    else => unreachable,
+                var bytesRead = try self.readData(&buffer);
+                if (bytesRead == 0) {
+                    break;
                 }
+                try body.appendSlice(buffer[0..bytesRead]);
             }
-            var event = try self.state.nextEvent(&[0]u8{});
-            std.debug.assert(event == .ConnectionClosed);
 
-            return response;
-        }
-
-        pub fn stream(self: *Self, method: Method, uri: Uri, options: anytype) !StreamingResponse(Self) {
-            var _request = try Request.init(self.allocator, method, uri, options);
-            try self.sendRequest(_request);
-            _request.deinit();
-
-            var response = try self.readResponse();
-
-            return StreamingResponse(Self){
-                .arena = response.arena,
-                .connection = self,
-                .status = response.status,
-                .version = response.version,
-                .headers = response.headers,
+            return Response {
+                .arena = _stream.arena,
+                .body = body.toOwnedSlice(),
+                .headers = _stream.headers,
+                .status = _stream.status,
+                .version = _stream.version,
             };
         }
 
-        fn sendRequest(self: *Self, _request: Request) !void {
-            var request_event = try h11.Request.init(_request.method, _request.path, _request.version, _request.headers);
-
-            try self.state.send(h11.Event{ .Request = request_event });
-
-            switch (_request.body) {
-                .Empty => return,
-                .ContentLength => |body| {
-                    try self.state.send(.{ .Data = h11.Data{ .bytes = body.content } });
+        pub inline fn readData(self: *Self, buffer: []u8) !usize {
+            var event = try self.state.nextEvent(buffer);
+            switch (event) {
+                .Data => |data| return data.bytes.len,
+                .EndOfMessage => {
+                    event = try self.state.nextEvent(&[0]u8{});
+                    if (event != .ConnectionClosed) {
+                        return error.RemoteProtocolError;
+                    }
+                    return 0;
                 },
+                else => return error.RemoteProtocolError,
             }
         }
 
-        fn readResponse(self: *Self) !Response {
-            var arena = ArenaAllocator.init(std.heap.page_allocator);
+        pub fn stream(self: *Self, method: Method, uri: Uri, options: anytype) !ResponseStream(Self) {
+            try self.sendRequest(method, uri, options);
+
+            var arena = ArenaAllocator.init(self.allocator);
             errdefer arena.deinit();
 
             var buffer: [4096]u8 = undefined;
@@ -167,15 +150,29 @@ pub fn Connection(comptime SocketType: type) type {
                 }
             }
 
-            return Response {
+            return ResponseStream(Self){
                 .arena = arena,
-                .headers = headers.toOwnedSlice(),
+                .connection = self,
                 .status = status_code,
                 .version = version,
-                .body = "",
+                .headers = headers.toOwnedSlice(),
             };
         }
 
+        fn sendRequest(self: *Self, method: Method, uri: Uri, options: anytype) !void {
+            var _request = try Request.init(self.allocator, method, uri, options);
+            defer _request.deinit();
+
+            var event = try h11.Request.init(_request.method, _request.path, _request.version, _request.headers);
+            try self.state.send(.{ .Request = event });
+
+            switch (_request.body) {
+                .Empty => return,
+                .ContentLength => |body| {
+                    try self.state.send(.{ .Data = .{ .bytes = body.content } });
+                },
+            }
+        }
 
         pub fn nextEvent(self: *Self, options: anytype) !h11.Event {
             return self.state.nextEvent(options);

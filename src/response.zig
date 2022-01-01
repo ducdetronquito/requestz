@@ -29,7 +29,7 @@ pub const Response = struct {
     }
 };
 
-pub fn StreamingResponse(comptime ConnectionType: type) type {
+pub fn ResponseStream(comptime ConnectionType: type) type {
     return struct {
         const Self = @This();
         arena: ArenaAllocator,
@@ -44,12 +44,7 @@ pub fn StreamingResponse(comptime ConnectionType: type) type {
         }
 
         pub fn read(self: *Self, buffer: []u8) !usize {
-            var event = try self.connection.nextEvent(buffer);
-            switch (event) {
-                .Data => |data| return data.bytes.len,
-                .EndOfMessage => return 0,
-                else => unreachable,
-            }
+            return self.connection.readData(buffer);
         }
     };
 }
