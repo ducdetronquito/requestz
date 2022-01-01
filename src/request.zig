@@ -101,75 +101,76 @@ pub const Request = struct {
 const expect = std.testing.expect;
 const expectEqualStrings = std.testing.expectEqualStrings;
 
-// test "Request" {
-//     const uri = try Uri.parse("http://ziglang.org/news/", false);
-//     var request = try Request.init(std.testing.allocator, .Get, uri, .{});
-//     defer request.deinit();
+test "Request" {
+    const uri = try Uri.parse("http://ziglang.org/news/", false);
+    var request = try Request.init(std.testing.allocator, .Get, uri, .{});
+    defer request.deinit();
 
-//     try expect(request.method == .Get);
-//     try expect(request.version == .Http11);
-//     try expectEqualStrings(request.headers.items()[0].name.raw(), "Host");
-//     try expectEqualStrings(request.headers.items()[0].value, "ziglang.org");
-//     try expectEqualStrings(request.path, "/news/");
-//     try expect(request.body == .Empty);
-// }
+    try expect(request.method == .Get);
+    try expect(request.version == .Http11);
 
-// test "Request - Path defaults to /" {
-//     const uri = try Uri.parse("http://ziglang.org", false);
-//     var request = try Request.init(std.testing.allocator, .Get, uri, .{});
-//     defer request.deinit();
+    try expectEqualStrings(request.headers.items()[0].name.raw(), "Host");
+    try expectEqualStrings(request.headers.items()[0].value, "ziglang.org");
+    try expectEqualStrings(request.path, "/news/");
+    try expect(request.body == .Empty);
+}
 
-//     try expectEqualStrings(request.path, "/");
-// }
+test "Request - Path defaults to /" {
+    const uri = try Uri.parse("http://ziglang.org", false);
+    var request = try Request.init(std.testing.allocator, .Get, uri, .{});
+    defer request.deinit();
 
-// test "Request - With user headers" {
-//     const uri = try Uri.parse("http://ziglang.org/news/", false);
+    try expectEqualStrings(request.path, "/");
+}
 
-//     var headers = std.ArrayList(Header).init(std.testing.allocator);
-//     defer headers.deinit();
-//     try headers.append(Header{ .name = "Gotta-go", .value = "Fast!" });
+test "Request - With user headers" {
+    const uri = try Uri.parse("http://ziglang.org/news/", false);
 
-//     var request = try Request.init(std.testing.allocator, .Get, uri, .{ .headers = headers.items });
-//     defer request.deinit();
+    var headers = Headers.init(std.testing.allocator);
+    defer headers.deinit();
+    try headers.append(try Header.init("Gotta-go", "Fast!"));
 
-//     try expectEqualStrings(request.headers.items()[0].name.raw(), "Host");
-//     try expectEqualStrings(request.headers.items()[0].value, "ziglang.org");
-//     try expectEqualStrings(request.headers.items()[1].name.raw(), "Gotta-go");
-//     try expectEqualStrings(request.headers.items()[1].value, "Fast!");
-// }
+    var request = try Request.init(std.testing.allocator, .Get, uri, .{ .headers = headers.items() });
+    defer request.deinit();
 
-// test "Request - With compile time user headers" {
-//     const uri = try Uri.parse("http://ziglang.org/news/", false);
+    try expectEqualStrings(request.headers.items()[0].name.raw(), "Host");
+    try expectEqualStrings(request.headers.items()[0].value, "ziglang.org");
+    try expectEqualStrings(request.headers.items()[1].name.raw(), "Gotta-go");
+    try expectEqualStrings(request.headers.items()[1].value, "Fast!");
+}
 
-//     var headers = .{.{ "Gotta-go", "Fast!" }};
-//     var request = try Request.init(std.testing.allocator, .Get, uri, .{ .headers = headers });
-//     defer request.deinit();
+test "Request - With compile time user headers" {
+    const uri = try Uri.parse("http://ziglang.org/news/", false);
 
-//     try expectEqualStrings(request.headers.items()[0].name.raw(), "Host");
-//     try expectEqualStrings(request.headers.items()[0].value, "ziglang.org");
-//     try expectEqualStrings(request.headers.items()[1].name.raw(), "Gotta-go");
-//     try expectEqualStrings(request.headers.items()[1].value, "Fast!");
-// }
+    var headers = .{.{ "Gotta-go", "Fast!" }};
+    var request = try Request.init(std.testing.allocator, .Get, uri, .{ .headers = headers });
+    defer request.deinit();
 
-// test "Request - With IP address" {
-//     const uri = try Uri.parse("http://127.0.0.1:8080/", false);
-//     var request = try Request.init(std.testing.allocator, .Get, uri, .{});
-//     defer request.deinit();
+    try expectEqualStrings(request.headers.items()[0].name.raw(), "Host");
+    try expectEqualStrings(request.headers.items()[0].value, "ziglang.org");
+    try expectEqualStrings(request.headers.items()[1].name.raw(), "Gotta-go");
+    try expectEqualStrings(request.headers.items()[1].value, "Fast!");
+}
 
-//     try expectEqualStrings(request.headers.items()[0].name.raw(), "Host");
-//     try expectEqualStrings(request.headers.items()[0].value, "127.0.0.1:8080");
-// }
+test "Request - With IP address" {
+    const uri = try Uri.parse("http://127.0.0.1:8080/", false);
+    var request = try Request.init(std.testing.allocator, .Get, uri, .{});
+    defer request.deinit();
 
-// test "Request - With content" {
-//     const uri = try Uri.parse("http://ziglang.org/news/", false);
-//     var request = try Request.init(std.testing.allocator, .Get, uri, .{ .content = "Gotta go fast!" });
-//     defer request.deinit();
+    try expectEqualStrings(request.headers.items()[0].name.raw(), "Host");
+    try expectEqualStrings(request.headers.items()[0].value, "127.0.0.1:8080");
+}
 
-//     try expect(request.body == .ContentLength);
-//     try expectEqualStrings(request.headers.items()[0].name.raw(), "Host");
-//     try expectEqualStrings(request.headers.items()[0].value, "ziglang.org");
-//     try expectEqualStrings(request.headers.items()[1].name.raw(), "Content-Length");
-//     try expectEqualStrings(request.headers.items()[1].value, "14");
-//     try expectEqualStrings(request.body.ContentLength.length, "14");
-//     try expectEqualStrings(request.body.ContentLength.content, "Gotta go fast!");
-// }
+test "Request - With content" {
+    const uri = try Uri.parse("http://ziglang.org/news/", false);
+    var request = try Request.init(std.testing.allocator, .Get, uri, .{ .content = "Gotta go fast!" });
+    defer request.deinit();
+
+    try expect(request.body == .ContentLength);
+    try expectEqualStrings(request.headers.items()[0].name.raw(), "Host");
+    try expectEqualStrings(request.headers.items()[0].value, "ziglang.org");
+    try expectEqualStrings(request.headers.items()[1].name.raw(), "Content-Length");
+    try expectEqualStrings(request.headers.items()[1].value, "14");
+    try expectEqualStrings(request.body.ContentLength.length, "14");
+    try expectEqualStrings(request.body.ContentLength.content, "Gotta go fast!");
+}

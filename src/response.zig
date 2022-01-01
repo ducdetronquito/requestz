@@ -32,21 +32,19 @@ pub const Response = struct {
 pub fn StreamingResponse(comptime ConnectionType: type) type {
     return struct {
         const Self = @This();
-        allocator: Allocator,
-        buffer: []const u8,
+        arena: ArenaAllocator,
         connection: *ConnectionType,
-        headers: Headers,
+        headers: []Header,
         status: StatusCode,
         version: Version,
 
         pub fn deinit(self: *Self) void {
-            self.allocator.free(self.buffer);
-            self.headers.deinit();
+            self.arena.deinit();
             self.connection.deinit();
         }
 
         pub fn read(self: *Self, buffer: []u8) !usize {
-            var event = try self.connection.nextEvent(.{ .buffer = buffer });
+            var event = try self.connection.nextEvent(buffer);
             switch (event) {
                 .Data => |data| return data.bytes.len,
                 .EndOfMessage => return 0,
