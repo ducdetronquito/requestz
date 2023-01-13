@@ -16,9 +16,9 @@ deps:
   iguanaTLS:
     src:
       github:
-        user: alexnask
+        user: nektro
         repo: iguanaTLS
-        ref: 0d39a361639ad5469f8e4dcdaea35446bbe54b48
+        ref: 6125dde57e38b39a6a2b6d574af206f43ceba52a
   network:
     root: network.zig
     src:
